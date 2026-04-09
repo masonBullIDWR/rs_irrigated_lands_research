@@ -30,6 +30,7 @@ im = "C:\\Users\\mason.bull\\OneDrive - State of Idaho\\Desktop\\Geoprocessing\\
 rf = "C:\\Users\\mason.bull\\OneDrive - State of Idaho\\Desktop\\Geoprocessing\\Data\\TV\\TV2015\\raster\\tv-2015-v9-classification.tif"
 nlcd = "C:\\Users\\mason.bull\\OneDrive - State of Idaho\\Desktop\\Geoprocessing\\Data\\TV\\TV2015\\raster\\NLCD_TV_2015_w_urb.tif"
 
+catMap = {0: 'Non-Irrigated', 1: 'Irrigated', 2: 'Urban'}
 model_list = [im, rf, nlcd]
 
 #%%
@@ -69,7 +70,6 @@ rf60 = "C:\\Users\\mason.bull\\OneDrive - State of Idaho\\Desktop\\Geoprocessing
 rf80 = "C:\\Users\\mason.bull\\OneDrive - State of Idaho\\Desktop\\Geoprocessing\\Data\\TV\\TV2015\\raster\\rf_2015_FractionImpervious_80.tif"
 
 percs = {'0': rf, '10': rf10, '20': rf20, '40': rf40, '60': rf60, '80': rf80}
-catMap = {0: 'Non-Irrigated', 1: 'Irrigated', 2: 'Urban'}
 
 #This is a function to get the raster stats from an shp and convert them into a single stacked image depending on grid cell size
 
