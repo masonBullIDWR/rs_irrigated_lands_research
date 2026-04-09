@@ -106,7 +106,7 @@ for i in percs.keys():
 #%%Get the data to make one to one line scatter plots of grid cells for each model type
 
 #this creates the the zonal stats shp for nlcd and irrmapper with the grid cell size specified above
-nlcd = "C:\\Users\mason.bull\\OneDrive - State of Idaho\\Desktop\\Geoprocessing\\Data\\TV\\TV2015\\raster\\NLCD_TV_2015_w_urb_v3_v2.tif"
+nlcd = "C:\\Users\\mason.bull\\OneDrive - State of Idaho\\Desktop\\Geoprocessing\\Data\\TV\\TV2015\\raster\\NLCD_TV_2015_w_urb_v3_v2.tif"
 
 GDF = gpd.GeoDataFrame.from_file("C:\\Users\\mason.bull\\OneDrive - State of Idaho\\Desktop\\Geoprocessing\\Data\\TV\\TV2015\\shp\\impComp\\rf_NLCD20_2015_rasterStats_oneMile.shp")
 GDF.rename(columns = {'Non-Irriga': 'rf_Non-Irrigated', 'Irrigated': 'rf_Irrigated', 'Urban': 'rf_Urban'}, inplace= True)
@@ -131,9 +131,7 @@ print('IRRIGATED AREA PIXEL COUNTS')
 (ggplot(final_df, aes(x = 'nl_Irrigated', y = 'im_Irrigated')) + geom_point(color = 'green', alpha = 0.3) + labs(title='Irrigated', x = 'NLCD',    y = 'IrrMapper') + scale_x_continuous(limits= [0, 3000], expand = [0,0]) + scale_y_continuous(limits= [0, 3000], expand = [0,0]) + geom_abline(slope = (1), intercept = (0,0)) + theme_bw() + coord_fixed(1)).show()
 
 print('\nURBAN AREA PIXEL COUNTS')
-#(ggplot(aes(x = newDat['rf_Urban'], y = newDat['im_Urban'])) + geom_point(color = 'grey', alpha = 0.3) + labs(title='Urban', x = 'IDWR-RF', y = 'IrrMapper') + scale_x_continuous(limits= [0, 3000], expand = [0,0]) + scale_y_continuous(limits= [0, 3000], expand = [0,0]) + geom_abline(slope = (1), intercept = (0,0))  + theme_bw()).show()
 (ggplot(final_df, aes(x = 'rf_Urban', y ='nl_Urban')) + geom_point(color = 'grey', alpha = 0.3) + labs(title='Urban', x = 'IDWR-RF', y = 'NLCD')      + scale_x_continuous(limits= [0, 3000], expand = [0,0]) + scale_y_continuous(limits= [0, 3000], expand = [0,0]) + geom_abline(slope = (1), intercept = (0,0)) + theme_bw() + coord_fixed(1)).show()
-(ggplot(final_df) + geom_point(color = 'grey', alpha = 0.3) + labs(title='Urban', x = 'NLCD',    y = 'IrrMapper') + scale_x_continuous(limits= [0, 3000], expand = [0,0]) + scale_y_continuous(limits= [0, 3000], expand = [0,0]) + geom_abline(slope = (1), intercept = (0,0)) + theme_bw() + coord_fixed(1)).show()
 
 print('\nNON-IRRIGATED AREA PIXEL COUNTS')
 (ggplot(final_df, aes(x = 'rf_Non-Irrigated', y = 'im_Non-Irrigated')) + geom_point(color = 'orange', alpha = 0.3) + labs(title='Non-Irrigated', x = 'IDWR-RF', y = 'IrrMapper') + scale_x_continuous(limits= [0, 3000], expand = [0,0]) + scale_y_continuous(limits= [0, 3000], expand = [0,0]) + geom_abline(slope = (1), intercept = (0,0)) + theme_bw() + coord_fixed(1)).show()
