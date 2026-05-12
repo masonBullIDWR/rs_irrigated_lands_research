@@ -27,6 +27,10 @@ aoi = gpd.read_file(aoi_path, layer = 'POU Merge', columns=['geometry']).to_crs(
 
 output_dict = {}
 #%%
+# run this if you don't want to do the EE stuff again but want to create the plots, then skip to the plotting section
+plotting_data = pd.read_csv(f'C:/Users/mason.bull/OneDrive - State of Idaho/Desktop/Geoprocessing/Data/TV/dryCreek/segmentation/dry_creek_et_data_ensemble_{et_version}.csv')
+plotting_data['year'] = plotting_data['year'].astype(str)
+#%%
 if et_version == 'v2_1':
     years = list(range(2015, 2026, 2))
 else:
@@ -123,9 +127,8 @@ for y in years:
 
     print(f'Acres of Grass in {year}: {dev_acres}\nGrass ET for {year}: {et_dict['grass_et']}\n\nAcres of Crops in {year}: {ag_acres}\nCropland ET for {year}: {et_dict['crops_et']}\n\n')
 
-#%%
-from plotnine import *
-
+#%% 
+#run this if you are NOT importing the plotting data as a csv, otherwise skip it
 plotting_data = pd.DataFrame(output_dict).transpose().reset_index().rename(columns={'index': 'year'})
 
 plotting_data['et_sum'] = plotting_data['grass_et'] + plotting_data['crops_et']
@@ -139,12 +142,17 @@ plotting_data['crops_et_depth'] = plotting_data['crops_et']/plotting_data['crop_
 plotting_data['grass_etof'] = plotting_data['grass_et_depth']/plotting_data['grass_eto']
 plotting_data['crops_etof'] = plotting_data['crops_et_depth']/plotting_data['crop_eto']
 
-et_volume = plotting_data.melt(id_vars=['year', 'et_sum'],
-                                       value_vars=['grass_et', 'crops_et'],
+#%%
+#the plotting section
+from plotnine import *
+et_volume = plotting_data.melt(id_vars=['year'],
+                                       value_vars=['grass_et', 'crops_et', 'et_sum'],
                                        var_name='et_cover', value_name='et_acre-feet')
 
+plotting_data['area_sum'] = plotting_data['grass_acres'] + plotting_data['crop_acres']
+
 area = plotting_data.melt(id_vars=['year'], 
-                                  value_vars=['grass_acres', 'crop_acres'], 
+                                  value_vars=['area_sum','grass_acres', 'crop_acres'], 
                                   var_name='area', value_name='acre')
 
 rate = plotting_data.melt(id_vars=['year'], 
@@ -157,25 +165,27 @@ etof = plotting_data.melt(id_vars=['year'],
 
 et_vol_plot = (ggplot(et_volume, aes(x = 'year')) + 
       geom_line(aes(y = 'et_acre-feet', group = 'et_cover', color = 'et_cover')) +
-      geom_line(aes(y = 'et_sum', group = 1), color = '#0BA11870', linetype = 'dotted') +
       labs(title=f'Acre feet of ET by landcover from Ensemble vers {et_version}', y = 'Acre feet')+
       geom_vline(xintercept = 2.5, color = '#BF131370', linetype = 'dotted') +
+      scale_color_manual(values= ['red', '#0BA11870','blue'], labels= ['Crops', 'Sum', 'Grass'])+
       annotate('text', label = 'Development starts', x = 2.6, y = 225, angle = 270) +
-      theme_bw())
+      theme_bw()+ theme(legend_title= element_blank()))
 
 area_plot = (ggplot(area, aes(x = 'year')) + 
         geom_line(aes(y = 'acre', group = 'area', color = 'area'), linetype = 'dashed') +
-        labs(title='Irrigated Area', y = 'Acres')+
+        labs(title='Irrigated Area', y = 'Acres') +
       geom_vline(xintercept = 2.5, color = '#BF131370', linetype = 'dotted') +
       annotate('text', label = 'Development starts', x = 2.6, y = 150, angle = 270) +
-        theme_bw())
+      scale_color_manual(values= ['#0BA11870','red','blue'], labels= ['Summed Acres', 'Crops Acres', 'Grass Acres'])+
+        theme_bw()+ theme(legend_title= element_blank()))
 
 et_rate_plot = (ggplot(rate, aes(x = 'year')) + 
         geom_line(aes(y = 'depth', group = 'et_depth', color = 'et_depth'), linetype = 'solid') +
         labs(title=f'ET Rate from Ensemble vers {et_version}', y = 'Feet')+
       geom_vline(xintercept = 2.5, color = '#BF131370', linetype = 'dotted') +
       annotate('text', label = 'Development starts', x = 2.6, y = .75, angle = 270) +
-        theme_bw())
+      scale_color_manual(values= ['red','blue'], labels= ['Crops ET Rate', 'Grass ET Rate'])+
+        theme_bw()+ theme(legend_title= element_blank()))
 
 eto_plot = (ggplot(plotting_data, aes(x = 'year')) + 
         geom_line(aes(y = 'grass_eto', group = 1), color = 'blue', linetype = 'solid') +
@@ -183,14 +193,15 @@ eto_plot = (ggplot(plotting_data, aes(x = 'year')) +
       geom_vline(xintercept = 2.5, color = '#BF131370', linetype = 'dotted') +
       annotate('text', label = 'Development starts', x = 2.6, y = 2, angle = 270) +
       scale_y_continuous(limits = (0, 4)) +
-        theme_bw())
+        theme_bw()+ theme(legend_title= element_blank()))
 
 etof_plot = (ggplot(etof, aes(x = 'year')) + 
         geom_line(aes(y = 'etof_val', group = 'etof', color = 'etof'), linetype = 'solid') +
         labs(title=f'EToF from Ensemble vers {et_version}', y = 'EToF')+
         geom_vline(xintercept = 2.5, color = '#BF131370', linetype = 'dotted') +
         annotate('text', label = 'Development starts', x = 2.6, y = 0.3, angle = 270) +
-        theme_bw())
+              scale_color_manual(values= ['red','blue'], labels= ['Crops EToF', 'Grass EToF'])+
+        theme_bw()+ theme(legend_title= element_blank()))
 
 et_vol_plot.show()
 area_plot.show()
@@ -199,10 +210,11 @@ eto_plot.show()
 etof_plot.show()
 
 #%%
-plotting_data.to_csv(f'C:/Users/mason.bull/OneDrive - State of Idaho/Desktop/Geoprocessing/Data/TV/dryCreek/segmentation/dry_creek_et_data_ensemble_{et_version}.csv')
+#plotting_data.to_csv(f'C:/Users/mason.bull/OneDrive - State of Idaho/Desktop/Geoprocessing/Data/TV/dryCreek/segmentation/dry_creek_et_data_ensemble_{et_version}.csv')
 
 et_vol_plot.save(f'C:/Users/mason.bull/OneDrive - State of Idaho/Desktop/Geoprocessing/Plots/TV/et_acre_feet_ensemble_{et_version}.png')
 area_plot.save(f'C:/Users/mason.bull/OneDrive - State of Idaho/Desktop/Geoprocessing/Plots/TV/landcover_area.png')
 et_rate_plot.save(f'C:/Users/mason.bull/OneDrive - State of Idaho/Desktop/Geoprocessing/Plots/TV/et_rate_ensemble_{et_version}.png')
 etof_plot.save(f'C:/Users/mason.bull/OneDrive - State of Idaho/Desktop/Geoprocessing/Plots/TV/etof_ensemble_{et_version}.png')
 eto_plot.save(f'C:/Users/mason.bull/OneDrive - State of Idaho/Desktop/Geoprocessing/Plots/TV/eto_ensemble_{et_version}.png')
+
