@@ -9,6 +9,7 @@ import numpy as np
 import numpy.ma as ma
 import matplotlib.pyplot as plt
 import pandas as pd
+import seaborn as sns
 
 import ee, geemap
 ee.Authenticate()
@@ -27,12 +28,7 @@ aoi_path = r"C:\Users\mason.bull\OneDrive - State of Idaho\Desktop\Geoprocessing
 aoi = gpd.read_file(aoi_path, layer = 'POU Merge', columns=['geometry']).to_crs('EPSG:8826')
 
 output_dict = {}
-#%%
-# run this if you don't want to do the EE stuff again but want to create the plots, then skip to the plotting section
-plotting_data = pd.read_csv(f'C:/Users/mason.bull/OneDrive - State of Idaho/Desktop/Geoprocessing/Data/TV/dryCreek/segmentation/dry_creek_et_data_ensemble_{et_version}.csv')
-plotting_data['year'] = plotting_data['year'].astype(str)
-
-#%%
+#%% the cdl lookup table 
 cdl_lookup = {
 0:  {'color': '#000000', 'crop': 'Background'},
 1:  {'color': '#ffd400', 'crop': 'Corn'},
@@ -194,6 +190,52 @@ for i in counts:
 year_crop_dict_filt = {key: value for key, value in year_crop_dict.items() if value > 1}
 crop_areas_dict.update({year: year_crop_dict})
 #%%
+#quick check of ET over the whole study area
+avg_aoi_et = {}
+avg_aoi_eto = {}
+for y in years:
+    if int(y) <= 2015:
+        et = ee.ImageCollection(f"projects/openet/assets/ensemble/conus/gridmet/monthly/v2_0")
+    else:
+        et = ee.ImageCollection(f"projects/openet/assets/ensemble/conus/gridmet/monthly/{et_version}")
+    eto_col = eto.filterBounds(dc_center).filterDate(f'{y}-04-01', f'{y}-11-01').select('eto').sum()
+    dat = et.filterDate(f'{y}-01-01', f'{str(int(y)+1)}-01-01').filterBounds(region).select('et_ensemble_mad').sum()
+    avg = ee.Number(ee.Image(dat).reduceRegion(reducer=ee.Reducer.mean(),
+                                     geometry=region.geometry(),
+                                     scale=30,
+                                     crs='EPSG:8826').get('et_ensemble_mad')).divide(304.8).getInfo()
+    avg_eto = ee.Number(ee.Image(eto_col).reduceRegion(reducer=ee.Reducer.mean(),
+                                     geometry=region.geometry(),
+                                     scale=30,
+                                     crs='EPSG:8826').get('eto')).divide(304.8).getInfo()
+    avg_aoi_et.update({y:avg})
+    avg_aoi_eto.update({y:avg_eto})
+
+df = pd.DataFrame.from_dict(avg_aoi_et, orient='index', columns=['et_rate'])
+area = aoi.area/4046.86
+df['acre_feet'] = df['et_rate']*area[0]
+fig, ax = plt.subplots()
+
+sns.lineplot(df, x = df.index, y = 'et_rate')
+ax.set_xlabel('Year')
+ax.set_ylabel('Avg Growing Season ET (feet)')
+ax.set_title(f'Avg ET over AOI from {et_version} (data pre 2016 are V2.0)')
+plt.show()
+
+df = pd.DataFrame.from_dict(avg_aoi_eto, orient='index', columns=['eto_rate'])
+
+fig, ax = plt.subplots()
+
+sns.lineplot(df, x = df.index, y = 'eto_rate')
+ax.set_xlabel('Year')
+ax.set_ylabel('Avg Growing Season ETo (feet)')
+ax.set_title(f'Avg ETo over AOI from {et_version} (data pre 2016 are V2.0)')
+ax.set_ylim(0,4)
+plt.show()
+
+
+#%%
+#if you already have run this, you don't need to run it again, skip down to plotting_Data
 if et_version == 'v2_1':
     years = list(range(2013, 2026, 2))
 else:
@@ -249,9 +291,19 @@ for y in years:
     eto_col = eto.filterBounds(dc_center).filterDate(f'{year}-04-01', f'{year}-11-01').select('eto').sum()
 
     grass_points = ee.Geometry.MultiPoint([[-116.14435810786225,43.54677968549953],
-                                     [-116.21768552820251,43.60910023895453],
-                                     [-116.27675057273248,43.65463002404425],
-                                     [-116.19923565143907,43.65063111241265]])
+                                           [-116.21768552820251,43.60910023895453],
+                                           [-116.27675057273248,43.65463002404425],
+                                           [-116.19923565143907,43.65063111241265],
+                                           [-116.4305704567148,43.657203441157634],
+                                           [-116.39728482613323,43.6365471144574],
+                                           [-116.26453158662328,43.67193033547616],
+                                           [-116.30936952222483,43.68923563496508],
+                                           [-116.32618685742202,43.50128911971363],
+                                           [-116.52107413314606,43.6041573300393],
+                                           [-116.53673823379303,43.60230828335806],
+                                           [-116.67146693545912,43.63667554114842],
+                                           [-116.29387470193619,43.746596119069714],
+                                           [-116.55862400142448,43.54628442033048]])
 
     ag_fc = geemap.gdf_to_ee(ag_gdf)
 
@@ -315,9 +367,8 @@ for y in years:
 
 pd.DataFrame(output_dict).transpose().reset_index().rename(columns={'index': 'year'}).to_csv(f'C:/Users/mason.bull/OneDrive - State of Idaho/Desktop/Geoprocessing/Data/TV/dryCreek/segmentation/dry_creek_et_gee_dict_{et_version}.csv')
 #%% 
-#run this if you are NOT importing the plotting data as a csv, otherwise skip it
 plotting_data = pd.read_csv(f'C:/Users/mason.bull/OneDrive - State of Idaho/Desktop/Geoprocessing/Data/TV/dryCreek/segmentation/dry_creek_et_gee_dict_{et_version}.csv')
-#pd.DataFrame(output_dict).transpose().reset_index().rename(columns={'index': 'year'})
+
 plotting_data = pd.concat([plotting_data.drop(['crop_types'], axis = 1), plotting_data['crop_types'].apply(pd.Series)], axis=1)
 plotting_data['et_sum'] = plotting_data['grass_et'] + plotting_data['crops_et']
 
@@ -336,6 +387,11 @@ plotting_data['average_et_rate'] = (grass+crop)/plotting_data['area_sum']
 
 plotting_data['grass_etof'] = plotting_data['grass_et_depth']/plotting_data['grass_eto']
 plotting_data['crops_etof'] = plotting_data['crops_et_depth']/plotting_data['crop_eto']
+
+grass_etof = plotting_data['grass_etof'].replace(np.nan, 0)*plotting_data['grass_acres']
+crop_etof = plotting_data['crops_etof']*plotting_data['crop_acres']
+
+plotting_data['average_etof'] = (grass_etof+crop_etof)/plotting_data['area_sum']
 
 plotting_data = plotting_data.drop('Unnamed: 0', axis = 1).rename(columns={0: 'crops'})
 l = []
@@ -364,7 +420,7 @@ rate = plotting_data.melt(id_vars=['year'],
                                   var_name='et_depth', value_name='depth')
 
 etof = plotting_data.melt(id_vars=['year'], 
-                                  value_vars=['grass_etof', 'crops_etof'], 
+                                  value_vars=['grass_etof', 'crops_etof', 'average_etof'], 
                                   var_name='etof', value_name='etof_val')
 
 et_vol_plot = (ggplot(et_volume, aes(x = 'year')) + 
@@ -414,30 +470,11 @@ eto_plot.show()
 etof_plot.show()
 
 #%%
-plotting_data.to_csv(f'C:/Users/mason.bull/OneDrive - State of Idaho/Desktop/Geoprocessing/Data/TV/dryCreek/segmentation/dry_creek_et_data_ensemble_{et_version}.csv')
-
 et_vol_plot.save(f'C:/Users/mason.bull/OneDrive - State of Idaho/Desktop/Geoprocessing/Plots/TV/et_acre_feet_ensemble_{et_version}.png')
 area_plot.save(f'C:/Users/mason.bull/OneDrive - State of Idaho/Desktop/Geoprocessing/Plots/TV/landcover_area.png')
 et_rate_plot.save(f'C:/Users/mason.bull/OneDrive - State of Idaho/Desktop/Geoprocessing/Plots/TV/et_rate_ensemble_{et_version}.png')
 etof_plot.save(f'C:/Users/mason.bull/OneDrive - State of Idaho/Desktop/Geoprocessing/Plots/TV/etof_ensemble_{et_version}.png')
 eto_plot.save(f'C:/Users/mason.bull/OneDrive - State of Idaho/Desktop/Geoprocessing/Plots/TV/eto_ensemble_{et_version}.png')
-
-#%%
-l = []
-for v in cdl_lookup:
-    i = cdl_lookup[v]['crop']
-    l.append(i)
-crops = set(l)
-
-columns = list(plotting_data.columns)
-res = [i for i in columns if any(n in i for n in crops)]
-
-crop_type = plotting_data.melt(id_vars='year',
-                                       value_vars=res,
-                                       var_name='crop_type', value_name='acres')
-
-(ggplot(crop_type, aes('year', y = 'acres', group = 'crop_type')) + 
- geom_line(aes(color = 'crop_type')))
 
 #%%
 import seaborn as sns
@@ -469,7 +506,7 @@ ax.legend(title=None, bbox_to_anchor=(1.1, 1), loc="upper left", labels = ax2_la
 plt.show()
 
 #%%
-#plot of etof and crop
+#plot of et rate and crop
 fig, ax = plt.subplots()
 
 sns.lineplot(rate, x = 'year', y = 'depth', hue='et_depth', palette=['blue', 'red', 'green'])
@@ -488,6 +525,30 @@ ax_handles, ax_labels = ax.get_legend_handles_labels()
 ax2_handles, ax2_labels = ax2.get_legend_handles_labels()
 
 ax2_labels[0:0] = ['Grass ET', 'Crop ET', 'Weighted Avg ET']
+ax2_handles[0:0] = ax_handles 
+ax.legend(title=None, bbox_to_anchor=(1.1, 1), loc="upper left", labels = ax2_labels, handles= ax2_handles)
+plt.show()
+
+#%%
+#plot of etof and crop
+fig, ax = plt.subplots()
+
+sns.lineplot(etof, x = 'year', y = 'etof_val', hue='etof', palette=['blue', 'red', 'green'])
+ax.set_ylim(bottom = 0)
+
+ax2 = ax.twinx()
+pivot.plot(kind = 'bar', stacked=True, colormap='jet', ax = ax2, alpha = 0.5, legend=None)
+
+ax.set_xlabel('Year')
+ax.set_ylabel('EToF')
+ax.set_title(f'EToF from Ensemble vers {et_version} (data pre 2016 are V2.0)')
+ax2.set_ylabel('Crop Acreage')
+ax2.set_ylim(0, 700)
+
+ax_handles, ax_labels = ax.get_legend_handles_labels()
+ax2_handles, ax2_labels = ax2.get_legend_handles_labels()
+
+ax2_labels[0:0] = ['Grass ET', 'Crop ET', 'Weighted Avg EToF']
 ax2_handles[0:0] = ax_handles 
 ax.legend(title=None, bbox_to_anchor=(1.1, 1), loc="upper left", labels = ax2_labels, handles= ax2_handles)
 plt.show()
