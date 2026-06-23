@@ -28,6 +28,24 @@ aspect = ee.Terrain.aspect(ee.Image(elevation))
 slope = ee.Terrain.slope(ee.Image(elevation))
 cdl = ee.ImageCollection('USDA/NASS/CDL').filterDate(dateRange[0]+'-01-01', dateRange[1]+'-12-31')
 
+training_17_18_path = r"C:\Users\mason.bull\OneDrive - State of Idaho\Desktop\Geoprocessing\Data\TV\bimodalChange\bitemporal_change_2017_2018_training_points.gpkg"
+training_19_20_path = r"C:\Users\mason.bull\OneDrive - State of Idaho\Desktop\Geoprocessing\Data\TV\bimodalChange\bitemporal_change_2019_2020_training_points.gpkg"
+training_18_19_path = r"C:\Users\mason.bull\OneDrive - State of Idaho\Desktop\Geoprocessing\Data\TV\bimodalChange\trainingData18_19_cat_moved.shp"
+
+training_18_19_raw = gpd.read_file(training_18_19_path)
+training_18_19 = training_18_19_raw[['geometry', 'im_changeC']].rename(columns={'im_changeC': 'change'})
+training_17_18 = gpd.read_file(training_17_18_path, layer='bitemporal_change_2017_2018_training_points')
+training_19_20 = gpd.read_file(training_19_20_path, layer='bitemporal_change_2019_2020_training_points')
+
+training_18_19['year'] = '18_19'
+training_17_18['year'] = '17_18'
+training_19_20['year'] = '19_20'
+
+training_17_18_server = geemap.gdf_to_ee(training_17_18)
+training_18_19_server = geemap.gdf_to_ee(training_17_18)
+training_19_20_server = geemap.gdf_to_ee(training_17_18)
+
+training_list = ee.Dictionary({'17_18': training_17_18_server, '18_19': training_18_19_server, '19_20': training_19_20_server})
 #%%This cell will compute a single year's irrigation/non-irrigation as an image, and will do that for the input dateRange
 #this won't compute the gain or loss between years, it's classifying a single year's total area for binary classification
 
@@ -149,35 +167,48 @@ for i in yearList:
     cat_backward = concatenate(img_1_backward, img_2_backward).set('system:index', ee.String('cat').cat(ee.String(year_1_backward.slice(2)).cat(ee.String(year_2_backward.slice(2)))))
     cat_images_reverse = cat_images_reverse.add(cat_backward)
 
-training_image = ee.Image(cat_images.filter(ee.Filter.equals('system:index', 'cat1819')).get(0))
-bands = training_image.bandNames()
-
-client_points = gpd.GeoDataFrame.from_file("C:\\Users\\mason.bull\\OneDrive - State of Idaho\\Desktop\\Geoprocessing\\Data\\TV\\bimodalChange\\trainingData18_19_cat_moved.shp")
-client_points_trimmed = client_points[['geometry', 'im_changeC']]
-server_points = geemap.gdf_to_ee(client_points_trimmed)
-
-forward_points = training_image.sampleRegions(
-    collection= server_points,
-    scale = 30,
-    projection= 'EPSG:8826'
-)
-forward_points_props = forward_points.first().propertyNames()
+bands = ee.Image(cat_images.get(0)).bandNames()
 
 status_change_dict = ee.Dictionary({'0':0, '1':1, '2':3, '3':2})
 def reverseDirection(feat):
+    forward_points_props = feat.propertyNames()
     firsts_names =  forward_points_props.filter(ee.Filter.stringContains('item', '_first')).sort() #get the list of properties with first in them
     seconds_names = forward_points_props.filter(ee.Filter.stringContains('item', '_second')).sort() #with second in them
     new_seconds = ee.Feature(feat).select(firsts_names, seconds_names) #rename the ones with first to second
     new_firsts = ee.Feature(feat).select(seconds_names, firsts_names) #vice versa
-    new_status = status_change_dict.get(ee.Number(feat.get('im_changeC')).format('%01d')) #change the status if it needs changed
-    new_feat = new_firsts.copyProperties(new_seconds).set('im_changeC', new_status).copyProperties(
+    new_status = status_change_dict.get(ee.Number(feat.get('change')).format('%01d')) #change the status if it needs changed
+    new_feat = new_firsts.copyProperties(new_seconds).set('change', new_status).copyProperties(
         feat, ['elevation', 'aspect', 'slope']).set('system:index', ee.String(feat.get('system:index')).cat('_02')) #create the new feature that is looking in the opposite direction from the input
     return new_feat
 
-backward_points = forward_points.map(reverseDirection)
+item = ee.FeatureCollection(training_list.keys().map(lambda k: ee.FeatureCollection([]).set({'time': k}))).first()
+item.get('time')
+def get_training_collection(item):
+    name = ee.Feature(item).get('time')
+    first_year =  ee.String(name).split('_').get(0)
+    second_year = ee.String(name).split('_').get(1)
+    image_id = ee.String('cat').cat(first_year).cat(second_year)
+    training_image = ee.Image(cat_images.filter(ee.Filter.equals('system:index', image_id)).get(0))
 
-forward_points = forward_points.randomColumn().filter(ee.Filter.notNull(forward_points_props))
-backward_points = backward_points.randomColumn().filter(ee.Filter.notNull(forward_points_props))
+    forward_points = training_image.sampleRegions(
+    collection= training_list.get(name),
+    scale = 30,
+    projection= 'EPSG:8826'
+    )
+    forward_points_props = forward_points.first().propertyNames().filter(ee.Filter.notEquals('item', 'year')).filter(ee.Filter.notEquals('item', 'classification'))
+    forward_points = forward_points.filter(ee.Filter.notNull(forward_points_props)).map(lambda i: i.set({'time': name, 'direction': 'forward'}))
+    backward_points = forward_points.map(reverseDirection).filter(ee.Filter.notNull(forward_points_props)).map(lambda i: i.set({'time': name, 'direction': 'backward'}))
+
+    return forward_points.merge(backward_points)
+    
+
+training_collections = ee.FeatureCollection(training_list.keys().map(lambda k: ee.FeatureCollection([]).set({'time': k}))).map(get_training_collection).flatten()
+
+forward_collections = training_collections.filter(ee.Filter.equals('direction', 'forward'))
+backward_collections = training_collections.filter(ee.Filter.equals('direction', 'backward'))
+
+forward_points = forward_collections.randomColumn()
+backward_points = backward_collections.randomColumn()
 
 forward_training = forward_points.filter('random <= 0.8')
 forward_testing  = forward_points.filter('random > 0.8')
@@ -188,19 +219,19 @@ backward_testing  = backward_points.filter('random > 0.8')
 
 forward_classifier = ee.Classifier.smileRandomForest(100).train(
         features = forward_training,
-        classProperty = 'im_changeC',
+        classProperty = 'change',
         inputProperties = bands)
 backward_classifier = ee.Classifier.smileRandomForest(100).train(
         features = backward_training,
-        classProperty = 'im_changeC',
+        classProperty = 'change',
         inputProperties = bands)
 forward_probability_classifier = ee.Classifier.smileRandomForest(100).setOutputMode('multiprobability').train(
       features = forward_training,
-      classProperty = 'im_changeC',
+      classProperty = 'change',
       inputProperties = bands)
 backward_probability_classifier = ee.Classifier.smileRandomForest(100).setOutputMode('multiprobability').train(
       features = backward_training,
-      classProperty = 'im_changeC',
+      classProperty = 'change',
       inputProperties = bands)
 
 def classifyImagePairsForward(img):
@@ -311,13 +342,14 @@ ee.batch.Export.image.toDrive(
 ).start()
 #%%export the Forward/Backward classification
 ee.batch.Export.table.toDrive(output_areas,
-                              description='bitemporal_change_irrigation_area_revised_export',
-                              fileNamePrefix='bitemporal_change_irrigation_area_revised',
+                              description='bitemporal_change_irrigation_area_revised_more_dates_export',
+                              fileNamePrefix='bitemporal_change_irrigation_area_revised_more_dates',
                               fileFormat='CSV').start()
 #%%
 
-dat = pd.read_csv(r"C:\Users\mason.bull\OneDrive - State of Idaho\Desktop\Geoprocessing\Data\TV\bimodalChange\bitemporal_change_irrigation_area_revised.csv").drop(['.geo', 'system:index'], axis=1)
+dat = pd.read_csv(r"C:\Users\mason.bull\OneDrive - State of Idaho\Desktop\Geoprocessing\Data\TV\bimodalChange\bitemporal_change_irrigation_area_revised_more_dates.csv").drop(['.geo', 'system:index'], axis=1)
 dat['irrAcres'] = dat['irrArea']*247
 fig, ax = plt.subplots()
 sns.lineplot(data = dat, x = 'year', y= 'irrAcres')
+ax.set_title('new method (17 to 18 to 19 to 20)')
 fig.show()
