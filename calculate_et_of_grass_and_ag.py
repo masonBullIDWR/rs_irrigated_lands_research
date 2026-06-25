@@ -460,7 +460,7 @@ etof_plot = (ggplot(etof, aes(x = 'year')) +
         labs(title=f'EToF from Ensemble vers {et_version}', y = 'EToF', subtitle=('Note: data pre-2016 are V2.0'))+
         geom_vline(xintercept = 3.5, color = '#BF131370', linetype = 'dotted') +
         annotate('text', label = 'Development starts', x = 3.6, y = 0.6, angle = 270) +
-              scale_color_manual(values= ['red','blue'], labels= ['Crops EToF', 'Grass EToF'])+
+              scale_color_manual(values= ['green', 'red','blue'], labels= ['Average EToF', 'Crops EToF', 'Grass EToF'])+
         theme_bw()+ theme(legend_title= element_blank()))
 
 et_vol_plot.show()
