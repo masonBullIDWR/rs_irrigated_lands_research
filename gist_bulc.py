@@ -49,6 +49,7 @@ import ee
 ee.Initialize(project = 'idwr-450722')
 ee.Authenticate()
 
+ee.data.setWorkloadTag('bulc_processing')
 # --- Defaults (override per call) -------------------------------------------
 MIN_PROB = 0.05  # floor on each conditional-matrix entry, then renormalized;
 # keeps the leveling from collapsing a class to exactly 0.
@@ -287,6 +288,51 @@ states = bulc(events, n_classes=2, region=aoi, scale=30)
 p_irr   = probability(states, k=1)   # {year: P(class 1)} if irr == 1
 classes = mode_class(states)          # {year: argmax class image}
 
-m = geemap.Map()
-m.addLayer(states[2023])
-m
+#m = geemap.Map()
+#m.addLayer(states[2023])
+#m
+leak_str = str(LEAK).split('.')
+leak_val = f'{leak_str[0]}-{leak_str[1]}'
+min_prob_str = str(MIN_PROB).split('.')
+min_prob_val = f'{min_prob_str[0]}-{min_prob_str[1]}'
+for i in states.keys():
+    year = str(i)
+    img = states[i]
+    prob = p_irr[i]
+    class_img = classes[i]
+    ee.batch.Export.image.toDrive(
+        image=img,
+        #name indicates {region}_bulc_{image type}_{year}_{leak value}_{min prob value}
+        fileNamePrefix=f'tv_bulc_state_{year}_l{leak_val}_mp{min_prob_val}',
+        description=f'tv_bulc_state_{year}_l{leak_val}_mp{min_prob_val}_export',
+        folder='BULC_tv',
+        region=aoi.geometry(),
+        scale=30,
+        crs='EPSG:8826',
+        formatOptions={'cloudOptimized': True}
+    ).start()
+    print(f'state {year} exported')
+
+    ee.batch.Export.image.toDrive(
+        image=prob,
+        fileNamePrefix=f'tv_bulc_prob_{year}_l{leak_val}_mp{min_prob_val}',
+        description=f'tv_bulc_prob_{year}_l{leak_val}_mp{min_prob_val}_export',
+        folder='BULC_tv',
+        region=aoi.geometry(),
+        scale=30,
+        crs='EPSG:8826',
+        formatOptions={'cloudOptimized': True}
+    ).start()
+    print(f'probabilty {year} exported')
+
+    ee.batch.Export.image.toDrive(
+        image=class_img,
+        fileNamePrefix=f'tv_bulc_class_{year}_l{leak_val}_mp{min_prob_val}',
+        description=f'tv_bulc_class_{year}_l{leak_val}_mp{min_prob_val}_export',
+        folder='BULC_tv',
+        region=aoi.geometry(),
+        scale=30,
+        crs='EPSG:8826',
+        formatOptions={'cloudOptimized': True}
+    ).start()
+    print(f'class {year} exported\n')
