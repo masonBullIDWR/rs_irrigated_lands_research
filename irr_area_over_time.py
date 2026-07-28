@@ -8,17 +8,20 @@ import pandas as pd
 import matplotlib.pyplot as plt
 
 #set the root directory to find the raster files
-root = pathlib.Path(r'C:\Users\mason.bull\OneDrive - State of Idaho\Desktop\Geoprocessing\Data\TV')
+#root = pathlib.Path(r'C:\Users\mason.bull\OneDrive - State of Idaho\Desktop\Geoprocessing\Data\TV')
+root = pathlib.Path(r'C:\Users\mason.bull\OneDrive - State of Idaho\Desktop\Geoprocessing\Data\TV\bulc_stuff')
 
 #get the list of raster images that are ready to be plotted 
-rasters = list(root.glob('**/*_postProcessed.tif'))
+#rasters = list(root.glob('**/*_postProcessed.tif'))
+rasters = list(root.glob('**/tv_bulc_im_class_*_l0-0_mp0-05.tif'))
 
 #assign an empty dictionary to be filled later
 output_list = []
 
 #define a function to get the irrigated area of each image
 def get_irr_area(path):
-    region, year, *other = path.name.split('-')
+    #region, year, *other = path.name.split('-')
+    region, bulc, method, type, year, *other = path.name.split('_')
 
     with rasterio.open(path) as src:
         rast = src.read(1)

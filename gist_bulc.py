@@ -51,11 +51,11 @@ ee.Authenticate()
 
 ee.data.setWorkloadTag('bulc_processing')
 # --- Defaults (override per call) -------------------------------------------
-MIN_PROB = 0.05  # floor on each conditional-matrix entry, then renormalized;
+MIN_PROB = 0.01  # floor on each conditional-matrix entry, then renormalized;
 # keeps the leveling from collapsing a class to exactly 0.
 INIT_CONF = 0.85  # confidence assigned to the first event's class at t0 (the
 # first event has nothing to be compared against).
-LEAK = 0.0  # optional per-step decay of the accumulated state back toward the
+LEAK = 0.05  # optional per-step decay of the accumulated state back toward the
 # class BASE RATE (not uniform), applied after each Bayesian update. 0.0 =
 # canonical BULC: purely multiplicative, so confidence can lock in permanently
 # and later events stop being able to flip a saturated pixel. Larger -> less
@@ -274,9 +274,15 @@ def classes_from_prob(
 
 #run---------------------
 import geemap
+from geemap import chart
 import geopandas as gpd
+events = {}
+classes = {}
+p_irr = {}
+states = {}
+ee_img_list = ee.List([])
 
-method = 'im' #either 'rf' for IDWR RF classifications or 'im' for IrrMapper
+method = 'rf' #either 'rf' for IDWR RF classifications or 'im' for IrrMapper
 if method == 'rf':
     col = ee.ImageCollection('projects/idwr-450722/assets/TreasureValley/tv-irr-lands').toList(6)
     events = {1987: ee.Image(col.get(0)),
@@ -288,9 +294,12 @@ if method == 'rf':
 elif method == 'im':
     col = ee.ImageCollection("UMT/Climate/IrrMapper_RF/v1_2").filter(ee.Filter.stringContains('system:index', 'ID'))
     events = {}
-    years = list(range(1985, 2026))
+    years = list(range(1986, 1992))
+    for x in list(range(1993, 2005)):
+      years.append(x)
     for y in years:
-        img = col.filterDate(f'{str(y)}-01-01', f'{str(y+1)}-01-01').first()
+        img = ee.Image(col.filterDate(f'{str(y)}-01-01', f'{str(y+1)}-01-01').first()).add(1).unmask(0).rename(['class'])
+        img = img.set('system:time_start', ee.Date(f'{y}-01-01').millis()).set('system:time_end', f'{str(y)}-12-31').set('year', y)
         events.update({y:img})
 
 shp = gpd.read_file(r"C:\Users\mason.bull\OneDrive - State of Idaho\Desktop\Geoprocessing\Data\TV\TV_and_MH_outline_union.shp")
@@ -299,48 +308,84 @@ states = bulc(events, n_classes=2, region=aoi, scale=30)
 p_irr   = probability(states, k=1)   # {year: P(class 1)} if irr == 1
 classes = mode_class(states)          # {year: argmax class image}
 
+for i in classes.keys():
+    image = ee.Image(classes[i]).set('system:time_start', ee.Date(f'{str(i)}-01-01').millis())
+    ee_img_list = ee_img_list.add(image)
+
+#m = geemap.Map()
+#m.addLayer(events[2023], {'min':0, 'max':1, 'palette': ['grey', 'red']}, 'im 2023')
+#m.addLayer(classes[2023], {'min':0, 'max':1, 'palette': ['grey', 'red']}, 'class 2023')
+#m
+
 leak_str = str(LEAK).split('.')
 leak_val = f'{leak_str[0]}-{leak_str[1]}'
 min_prob_str = str(MIN_PROB).split('.')
 min_prob_val = f'{min_prob_str[0]}-{min_prob_str[1]}'
-for i in states.keys():
-    year = str(i)
-    img = states[i]
-    prob = p_irr[i]
-    class_img = classes[i]
-    ee.batch.Export.image.toDrive(
-        image=img,
-        #name indicates {region}_bulc_{irrmapper or idwrrf}_{image type}_{year}_{leak value}_{min prob value}
-        fileNamePrefix=f'tv_bulc_{method}_state_{year}_l{leak_val}_mp{min_prob_val}',
-        description=f'tv_bulc_{method}_state_{year}_l{leak_val}_mp{min_prob_val}_export',
-        folder='BULC_tv',
-        region=aoi.geometry(),
-        scale=30,
-        crs='EPSG:8826',
-        formatOptions={'cloudOptimized': True}
-    ).start()
-    print(f'state for {method} {year} exported')
 
-    ee.batch.Export.image.toDrive(
-        image=prob,
-        fileNamePrefix=f'tv_bulc_{method}_prob_{year}_l{leak_val}_mp{min_prob_val}',
-        description=f'tv_bulc_{method}_prob_{year}_l{leak_val}_mp{min_prob_val}_export',
-        folder='BULC_tv',
-        region=aoi.geometry(),
-        scale=30,
-        crs='EPSG:8826',
-        formatOptions={'cloudOptimized': True}
-    ).start()
-    print(f'probabilty for {method} {year} exported')
+imgs = []
+imgs = ee.ImageCollection.fromImages(ee_img_list)
 
-    ee.batch.Export.image.toDrive(
-        image=class_img,
-        fileNamePrefix=f'tv_bulc_{method}_class_{year}_l{leak_val}_mp{min_prob_val}',
-        description=f'tv_bulc_{method}_class_{year}_l{leak_val}_mp{min_prob_val}_export',
-        folder='BULC_tv',
-        region=aoi.geometry(),
-        scale=30,
-        crs='EPSG:8826',
-        formatOptions={'cloudOptimized': True}
-    ).start()
-    print(f'class for {method} {year} exported\n')
+title = f"Irr area with leak = {leak_str[0]}.{leak_str[1]}, min_prob = {min_prob_str[0]}.{min_prob_str[1]}"
+x_label = "Year"
+y_label = "Area (sqm)"
+colors = ["#ff0404", "#686b6d"]
+fig = chart.image_series(
+    imgs,
+    region=aoi,
+    reducer=ee.Reducer.sum(),
+    scale=30,
+    x_property="system:time_start",
+    chart_type="LineChart",
+    x_cols="date",
+    y_cols=['class'],
+    colors=colors,
+    title=title,
+    x_label=x_label,
+    y_label=y_label,
+    legend_location="right",
+)
+fig
+
+
+#commenting out while isolating the bug
+#for i in states.keys():
+#    year = str(i)
+#    img = states[i]
+#    prob = p_irr[i]
+#    class_img = classes[i]
+#    ee.batch.Export.image.toDrive(
+#        image=img,
+#        #name indicates {region}_bulc_{irrmapper or idwrrf}_{image type}_{year}_{leak value}_{min prob value}
+#        fileNamePrefix=f'tv_bulc_{method}_state_{year}_l{leak_val}_mp{min_prob_val}',
+#        description=f'tv_bulc_{method}_state_{year}_l{leak_val}_mp{min_prob_val}_export',
+#        folder='BULC_tv',
+#        region=aoi.geometry(),
+#        scale=30,
+#        crs='EPSG:8826',
+#        formatOptions={'cloudOptimized': True}
+#    ).start()
+#    print(f'state for {method} {year} exported')
+#
+#    ee.batch.Export.image.toDrive(
+#        image=prob,
+#        fileNamePrefix=f'tv_bulc_{method}_prob_{year}_l{leak_val}_mp{min_prob_val}',
+#        description=f'tv_bulc_{method}_prob_{year}_l{leak_val}_mp{min_prob_val}_export',
+#        folder='BULC_tv',
+#        region=aoi.geometry(),
+#        scale=30,
+#        crs='EPSG:8826',
+#        formatOptions={'cloudOptimized': True}
+#    ).start()
+#    print(f'probabilty for {method} {year} exported')
+#
+#    ee.batch.Export.image.toDrive(
+#        image=class_img,
+#        fileNamePrefix=f'tv_bulc_{method}_class_{year}_l{leak_val}_mp{min_prob_val}',
+#        description=f'tv_bulc_{method}_class_{year}_l{leak_val}_mp{min_prob_val}_export',
+#        folder='BULC_tv',
+#        region=aoi.geometry(),
+#        scale=30,
+#        crs='EPSG:8826',
+#        formatOptions={'cloudOptimized': True}
+#    ).start()
+#    print(f'class for {method} {year} exported\n')
