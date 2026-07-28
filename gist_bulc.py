@@ -52,6 +52,8 @@ inherent to BULC.
 from __future__ import annotations
 
 import ee
+ee.Initialize(project = 'idwr-450722')
+ee.Authenticate()
 
 # --- Defaults (override per call) -------------------------------------------
 MIN_PROB = 0.05  # floor on each conditional-matrix entry, then renormalized;
@@ -340,8 +342,11 @@ def classes_from_prob(
 
 #run---------------------
 import geemap
-from geemap import chart
 import geopandas as gpd
+import seaborn as sns
+import matplotlib.pyplot as plt
+import pandas as pd
+
 events = {}
 classes = {}
 p_irr = {}
@@ -360,9 +365,7 @@ if method == 'rf':
 elif method == 'im':
     col = ee.ImageCollection("UMT/Climate/IrrMapper_RF/v1_2").filter(ee.Filter.stringContains('system:index', 'ID'))
     events = {}
-    years = list(range(1986, 1992))
-    for x in list(range(1993, 2005)):
-      years.append(x)
+    years = list(range(1986, 2026))
     for y in years:
         img = ee.Image(col.filterDate(f'{str(y)}-01-01', f'{str(y+1)}-01-01').first()).add(1).unmask(0).rename(['class'])
         img = img.set('system:time_start', ee.Date(f'{y}-01-01').millis()).set('system:time_end', f'{str(y)}-12-31').set('year', y)
@@ -375,13 +378,8 @@ p_irr   = probability(states, k=1)   # {year: P(class 1)} if irr == 1
 classes = mode_class(states)          # {year: argmax class image}
 
 for i in classes.keys():
-    image = ee.Image(classes[i]).set('system:time_start', ee.Date(f'{str(i)}-01-01').millis())
+    image = ee.Image(classes[i]).multiply(9e-4).rename('bulc').addBands(ee.Image(events[i]).multiply(9e-4).rename(method)).set('system:time_start', ee.Date(f'{str(i)}-01-01').millis())
     ee_img_list = ee_img_list.add(image)
-
-#m = geemap.Map()
-#m.addLayer(events[2023], {'min':0, 'max':1, 'palette': ['grey', 'red']}, 'im 2023')
-#m.addLayer(classes[2023], {'min':0, 'max':1, 'palette': ['grey', 'red']}, 'class 2023')
-#m
 
 leak_str = str(LEAK).split('.')
 leak_val = f'{leak_str[0]}-{leak_str[1]}'
@@ -391,28 +389,29 @@ min_prob_val = f'{min_prob_str[0]}-{min_prob_str[1]}'
 imgs = []
 imgs = ee.ImageCollection.fromImages(ee_img_list)
 
-title = f"Irr area with leak = {leak_str[0]}.{leak_str[1]}, min_prob = {min_prob_str[0]}.{min_prob_str[1]}"
-x_label = "Year"
-y_label = "Area (sqm)"
-colors = ["#ff0404", "#686b6d"]
-fig = chart.image_series(
-    imgs,
-    region=aoi,
-    reducer=ee.Reducer.sum(),
-    scale=30,
-    x_property="system:time_start",
-    chart_type="LineChart",
-    x_cols="date",
-    y_cols=['class'],
-    colors=colors,
-    title=title,
-    x_label=x_label,
-    y_label=y_label,
-    legend_location="right",
-)
+#get images reduced to plot the area over time
+def reduce_imgs (img):
+    stat = ee.Image(img).reduceRegion(geometry=aoi.geometry(),
+                                             reducer=ee.Reducer.sum(),
+                                             scale=30,
+                                             crs='EPSG:8826',
+                                             maxPixels=2e8)
+    return ee.Feature(None, {'year':ee.Date(ee.Image(img).get('system:time_start')).format('YYYY'),
+                                 'bulc': stat.get('bulc'),
+                                 method: stat.get(method)})
+
+reduced_imgs = ee.FeatureCollection(ee_img_list.map(reduce_imgs))
+local_img_stats = geemap.ee_to_df(reduced_imgs)
+
+dat = pd.melt(frame=local_img_stats, id_vars='year', value_vars=['bulc','rf'], var_name='stat', value_name='area')
+fig, ax = plt.subplots()
+sns.lineplot(data=dat, x='year', y = 'area', hue = 'stat', ax = ax, style='stat')
+ax.set_title(f"{method} irr area with leak = {leak_str[0]}.{leak_str[1]}, min_prob = {min_prob_str[0]}.{min_prob_str[1]}")
+ax.set_ylabel('Area (km²)')
+ax.set_xlabel('Year')
 fig
 
-
+#%%
 #commenting out while isolating the bug
 #for i in states.keys():
 #    year = str(i)
