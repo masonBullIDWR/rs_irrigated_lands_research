@@ -9,18 +9,24 @@ actually BULC.
 
 Algorithm, per time step t (one classification "event" E_t):
 
-  1. Harden the running estimate S_{t-1} to its most-likely class (per-pixel
-     argmax).
-  2. Overlay that hardened estimate against the new event E_t over the study
-     region and tabulate a contingency matrix T[h][e]  (rows = hardened/"truth"
-     classes, columns = event classes).
-  3. Column-normalize T -> conditional matrix  M[h][e] = P(class h | event = e),
-     tempered by a minimum so no entry is exactly 0. This is the "leveling":
-     when an event agrees well with the accumulated estimate its classes map
+  1. Take the REFERENCE classification for this step. Per the paper (S2.4,
+     "classified Events i and i+1 are overlaid, with pixel counts tallied as if
+     Event i were the reference data"), that is the PREVIOUS EVENT E_{t-1} --
+     not BULC's own running estimate. `reference="state"` selects the older
+     behaviour of hardening S_{t-1} instead; see `bulc()`.
+  2. Overlay the reference against the new event E_t over the study region and
+     tabulate a contingency matrix T[h][e]  (rows = reference classes, columns
+     = new-event classes).
+  3. Row-normalize T -> conditional matrix  M[h][e] = P(event = e | class h),
+     tempered by a minimum so no entry is exactly 0, then optionally dampened
+     toward uniform by the paper's global factor `d` (S4.6). This is the
+     "leveling": when an event agrees well with the reference its classes map
      confidently; when it disagrees the mass gets spread out, so a noisy year is
-     automatically down-weighted.
-  4. Per pixel, the event class selects a column of M -> an n-class likelihood
-     vector image.
+     automatically down-weighted. Normalizing by row (not column) keeps this a
+     likelihood -- see `_conditional` for why the column form silently kills the
+     minority class over a long series.
+  4. Per pixel, the observed event class selects a column of M -> an n-class
+     likelihood vector image (band h = M[h][e_observed]).
   5. Bayesian update:  S_t = normalize( S_{t-1} * likelihood ).
 
 Inputs are CLASSIFICATIONS, not probabilities -- this is the canonical
@@ -46,16 +52,22 @@ inherent to BULC.
 from __future__ import annotations
 
 import ee
-ee.Initialize(project = 'idwr-450722')
-ee.Authenticate()
 
-ee.data.setWorkloadTag('bulc_processing')
 # --- Defaults (override per call) -------------------------------------------
-MIN_PROB = 0.01  # floor on each conditional-matrix entry, then renormalized;
-# keeps the leveling from collapsing a class to exactly 0.
+MIN_PROB = 0.05  # floor on each conditional-matrix entry, then renormalized;
+# keeps the leveling from collapsing a class to exactly 0. This is a guard of
+# ours, NOT the paper's tempering -- see DAMPEN.
+DAMPEN = 1.0  # the paper's global "dampening factor" d (S4.6), applied to every
+# update factor t as  d*t + (1-d)/n.  d = 1.0 is off (the default here, so the
+# module's behaviour is unchanged unless you ask for it); the study in Cardille
+# & Fortin used d = 0.5, which halved the strength of every step while keeping
+# the relative rank of the update factors. Unlike MIN_PROB (a floor, which bites
+# hard on sharp rows and not at all on flat ones) dampening shrinks every row by
+# the same fraction, so it is rank-preserving. It slows saturation but does NOT
+# prevent it -- accumulated log-odds still grow without bound. Use LEAK for that.
 INIT_CONF = 0.85  # confidence assigned to the first event's class at t0 (the
 # first event has nothing to be compared against).
-LEAK = 0.05  # optional per-step decay of the accumulated state back toward the
+LEAK = 0.0  # optional per-step decay of the accumulated state back toward the
 # class BASE RATE (not uniform), applied after each Bayesian update. 0.0 =
 # canonical BULC: purely multiplicative, so confidence can lock in permanently
 # and later events stop being able to flip a saturated pixel. Larger -> less
@@ -151,27 +163,63 @@ def _contingency(
     return [[ee.Number(d.get(f"c_{h}_{e}")) for e in range(n)] for h in range(n)]
 
 
-def _conditional(T, n: int, min_prob: float):
-    """Column-normalize the contingency to M[h][e] = P(class h | event e),
-    temper by `min_prob`, and renormalize each column to sum to 1."""
+def _dampen(cond, n: int, d: float):
+    """Cardille & Fortin S4.6: dampened update factor = d*t + (1-d)/n.
+
+    Blends every entry a fraction (1-d) of the way toward uniform. Applied to a
+    row that sums to 1 it is sum-preserving (d*1 + n*(1-d)/n = 1), so the rows
+    stay proper conditional distributions and no renormalization is needed --
+    which is why the paper does not renormalize after dampening either."""
+    if d >= 1.0:
+        return cond
+    off = (1.0 - d) / n
+    return [[ee.Number(cond[h][e]).multiply(d).add(off) for e in range(n)]
+            for h in range(n)]
+
+
+def _conditional(T, n: int, min_prob: float, dampen: float = 1.0):
+    """Row-normalize the contingency to M[h][e] = P(event e | class h), temper by
+    `min_prob`, and renormalize each row to sum to 1.
+
+    ROW, not column. `_update` multiplies the prior by this, so it must be the
+    likelihood P(e | h). Column-normalizing gives P(h | e), which by Bayes is
+    proportional to P(e | h) * P(h) -- it already contains the class base rate.
+    Multiplying that in at every step re-applies the base rate once per year, so
+    on a landscape dominated by one class the minority class is driven down a
+    little each step. Because the base rate is read off the *hardened running
+    state*, the shrinkage feeds back on itself: fewer minority pixels -> harsher
+    penalty -> fewer still, until the hardened map holds none of that class at
+    all and its column pins to `min_prob` permanently (an absorbing zero). Over a
+    decade the drift hides in the noise; over 1985-2022 it zeroes the class out.
+    """
     cond = [[None] * n for _ in range(n)]
-    for e in range(n):
-        col_sum = ee.Number(0)
-        for h in range(n):
-            col_sum = col_sum.add(T[h][e])
-        col_sum = col_sum.max(1)  # guard: event class absent over the region
-        tempered = [ee.Number(T[h][e]).divide(col_sum).max(min_prob) for h in range(n)]
+    uniform = ee.Number(1.0 / n)
+    for h in range(n):
+        row_sum = ee.Number(0)
+        for e in range(n):
+            row_sum = row_sum.add(T[h][e])
+        # A reference class absent from the region has an all-zero row, which
+        # carries no information -> fall back to uniform. Without this the row
+        # renormalizes to 0/0: at min_prob > 0 the floor happens to rescue it,
+        # but at min_prob = 0 (a paper-exact run, where dampening replaces the
+        # floor) every entry would come out 0 and that class's likelihood would
+        # be identically zero -- a permanent absorbing state.
+        present = row_sum.gt(0)
+        denom = row_sum.max(1)
+        tempered = [ee.Number(T[h][e]).divide(denom).max(min_prob) for e in range(n)]
         renorm = ee.Number(0)
         for v in tempered:
             renorm = renorm.add(v)
-        for h in range(n):
-            cond[h][e] = tempered[h].divide(renorm)
-    return cond
+        renorm = renorm.max(1e-12)
+        for e in range(n):
+            cond[h][e] = (tempered[e].divide(renorm).multiply(present)
+                          .add(uniform.multiply(ee.Number(1).subtract(present))))
+    return _dampen(cond, n, dampen)
 
 
 def _likelihood(event: ee.Image, cond, n: int) -> ee.Image:
-    """Per-pixel n-band likelihood: band h = M[h][event]. The event class
-    selects a column of the conditional matrix."""
+    """Per-pixel n-band likelihood: band h = M[h][event] = P(observed event | h).
+    The observed event class selects a column of the conditional matrix."""
     bands = []
     for h in range(n):
         band = ee.Image.constant(0)
@@ -196,6 +244,8 @@ def bulc(
     min_prob: float = MIN_PROB,
     init_conf: float = INIT_CONF,
     leak: float = LEAK,
+    dampen: float = DAMPEN,
+    reference: str = "event",
     prior=None,
     tile_scale: int = 4,
     max_pixels: float = MAX_PIXELS,
@@ -207,6 +257,17 @@ def bulc(
     region    : geometry over which the leveling contingency is tabulated (req'd).
     leak      : optional per-step decay toward the class base rate (0.0 = off =
                 canonical BULC). See LEAK. Larger -> less temporal stickiness.
+                This is the only knob that bounds accumulated confidence; over a
+                multi-decade series it is what keeps the estimate responsive.
+    dampen    : the paper's global dampening factor d in (0, 1] (S4.6). 1.0 = off
+                (default). The published study used 0.5. Weakens every step
+                uniformly; delays saturation but does not bound it -- not a
+                substitute for `leak`.
+    reference : what the update table is tabulated against each step.
+                "event" (default) = the previous event, per Cardille & Fortin
+                S2.4. "state" = the hardened running estimate, which makes the
+                update table depend on BULC's own output (a feedback loop) and
+                is retained only to reproduce earlier runs of this module.
     prior     : leak target when leak > 0. None -> each event's own class
                 marginals (base rate that year). A length-`n_classes` sequence
                 (e.g. [0.85, 0.15]) pins a fixed base rate instead. Ignored when
@@ -220,27 +281,33 @@ def bulc(
         )
     if not 0.0 <= leak <= 1.0:
         raise ValueError(f"leak must be a fraction in [0, 1]; got {leak}")
+    if not 0.0 < dampen <= 1.0:
+        raise ValueError(f"dampen must be in (0, 1]; got {dampen}")
+    if reference not in ("event", "state"):
+        raise ValueError(f"reference must be 'event' or 'state'; got {reference!r}")
     if not 0.0 <= min_prob < 1.0 / n_classes:
         raise ValueError(
             f"min_prob must be in [0, 1/n_classes) = [0, {1.0 / n_classes:.3g}); "
             f"got {min_prob}. At or above 1/n the floor alone flattens every "
-            "conditional column to uniform, so the leveling carries no signal."
+            "conditional row to uniform, so the leveling carries no signal."
         )
     years = sorted(events)
-    state = _from_event(ee.Image(events[years[0]]).toInt(), n_classes, init_conf)
+    prev_event = events[years[0]].toInt()
+    state = _from_event(prev_event, n_classes, init_conf)
     out = {years[0]: state}
     fixed_target = _prior_image(prior, n_classes) if prior is not None else None
     for y in years[1:]:
         event = events[y].toInt()
-        hard = _harden(state, n_classes)
-        T = _contingency(hard, event, n_classes, region, scale, tile_scale, max_pixels)
-        cond = _conditional(T, n_classes, min_prob)
+        ref = prev_event if reference == "event" else _harden(state, n_classes)
+        T = _contingency(ref, event, n_classes, region, scale, tile_scale, max_pixels)
+        cond = _conditional(T, n_classes, min_prob, dampen)
         L = _likelihood(event, cond, n_classes)
         state = _update(state, L, n_classes)
         if leak > 0.0:
             target = fixed_target if fixed_target is not None else _event_base_rate(T, n_classes)
             state = _leak(state, target, n_classes, leak)
         out[y] = state
+        prev_event = event
     return out
 
 
@@ -270,7 +337,6 @@ def classes_from_prob(
         y: p.gte(cutoff).multiply(irr_class - other).add(other).toInt().rename("event")
         for y, p in prob_by_year.items()
     }
-
 
 #run---------------------
 import geemap
