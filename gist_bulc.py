@@ -353,7 +353,8 @@ p_irr = {}
 states = {}
 ee_img_list = ee.List([])
 
-method = 'rf' #either 'rf' for IDWR RF classifications or 'im' for IrrMapper
+method = 'im' #either 'rf' for IDWR RF classifications or 'im' for IrrMapper
+
 if method == 'rf':
     col = ee.ImageCollection('projects/idwr-450722/assets/TreasureValley/tv-irr-lands').toList(6)
     events = {1987: ee.Image(col.get(0)),
@@ -364,11 +365,16 @@ if method == 'rf':
               2023: ee.Image(col.get(5))}
 elif method == 'im':
     col = ee.ImageCollection("UMT/Climate/IrrMapper_RF/v1_2").filter(ee.Filter.stringContains('system:index', 'ID'))
+    def organize(img):
+        year = ee.String(ee.Image(img).get('system:index')).split('_').get(-1)
+        return ee.Image(img).add(1).unmask(0).set('system:time_start', ee.String(year).cat('-01-01')
+                                                  ).set('system:time_end', ee.String(year).cat('-12-31')
+                                                        ).set('year', year)
+    col = col.map(organize)
     events = {}
     years = list(range(1986, 2026))
     for y in years:
-        img = ee.Image(col.filterDate(f'{str(y)}-01-01', f'{str(y+1)}-01-01').first()).add(1).unmask(0).rename(['class'])
-        img = img.set('system:time_start', ee.Date(f'{y}-01-01').millis()).set('system:time_end', f'{str(y)}-12-31').set('year', y)
+        img = ee.Image(col.filterDate(f'{str(y)}-01-01', f'{str(y+1)}-01-01').first())
         events.update({y:img})
 
 shp = gpd.read_file(r"C:\Users\mason.bull\OneDrive - State of Idaho\Desktop\Geoprocessing\Data\TV\TV_and_MH_outline_union.shp")
@@ -378,7 +384,8 @@ p_irr   = probability(states, k=1)   # {year: P(class 1)} if irr == 1
 classes = mode_class(states)          # {year: argmax class image}
 
 for i in classes.keys():
-    image = ee.Image(classes[i]).multiply(9e-4).rename('bulc').addBands(ee.Image(events[i]).multiply(9e-4).rename(method)).set('system:time_start', ee.Date(f'{str(i)}-01-01').millis())
+    image = ee.Image(classes[i]).multiply(9e-4).rename('bulc').addBands(
+        ee.Image(events[i]).multiply(9e-4).rename(method)).set('system:time_start', ee.Date(f'{str(i)}-01-01').millis())
     ee_img_list = ee_img_list.add(image)
 
 leak_str = str(LEAK).split('.')
@@ -386,7 +393,6 @@ leak_val = f'{leak_str[0]}-{leak_str[1]}'
 min_prob_str = str(MIN_PROB).split('.')
 min_prob_val = f'{min_prob_str[0]}-{min_prob_str[1]}'
 
-imgs = []
 imgs = ee.ImageCollection.fromImages(ee_img_list)
 
 #get images reduced to plot the area over time
@@ -409,7 +415,7 @@ sns.lineplot(data=dat, x='year', y = 'area', hue = 'stat', ax = ax, style='stat'
 ax.set_title(f"{method} irr area with leak = {leak_str[0]}.{leak_str[1]}, min_prob = {min_prob_str[0]}.{min_prob_str[1]}")
 ax.set_ylabel('Area (km²)')
 ax.set_xlabel('Year')
-fig
+
 
 #%%
 #commenting out while isolating the bug
