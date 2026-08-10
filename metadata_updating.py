@@ -12,7 +12,8 @@ from RF_IrrigatedLands_Functions import LoadConfigFile
 parent_dir = Path(__file__).parent.absolute()
 config_file = parent_dir / "config_file.yml"
 config = LoadConfigFile(config_file)
-year = config['year']
+#year = config['year']
+year = 2025
 
 #a dictionary for file paths the key is the N: location name, value is X: location, abbreviated name, and full name
 # None is inserted where one is missing in either path
@@ -31,8 +32,10 @@ location_dict = {'BearRiverCompact':        ['BearRiver',         'BR',       'B
                  'TreasureValley':          ['BoiseValley',       'TV',       'Treasure Valley'],
                  }
 #region is a key lookup value for the location_dict (the N: location)
-area = config['area']
-region = [l for l in location_dict.keys() if area.casefold() == str(location_dict[l][1]).casefold()][0]
+#area = config['area']
+area = 'TreasureValley'
+#region = [l for l in location_dict.keys() if area.casefold() == str(location_dict[l][1]).casefold()][0]
+region = area
 
 x_drive_name = location_dict[region][0]
 abb_name = location_dict[region][1]
@@ -46,6 +49,8 @@ metadata_loc = f'N:\\IrrigatedLands\\rf_metadata_template.docx'
 
 #metadata document in a docx format for easy editing when things need changed
 doc = Document(r"N:\IrrigatedLands\rf_metadata_template.docx")
+
+breaker = ahhhh
 
 #----------------file setup------------------------
 if not Path(x_staging_loc).exists():
@@ -78,7 +83,8 @@ for n in [f.name for f in root_path.glob('**/*') if f.is_dir()]:
     if 'reporting' in n:
         dirs.append(n)
 
-reporting_doc = Document(root_path / dirs[-1] / f'{area}-{year}-v{dirs[-1].split('V')[-1]}-classification_Irrigated_lands_reporting.docx')
+#reporting_doc = Document(root_path / dirs[-1] / f'{area}-{year}-v{dirs[-1].split('V')[-1]}-classification_Irrigated_lands_reporting.docx')
+reporting_doc = Document(r"C:\Users\mason.bull\OneDrive - State of Idaho\Desktop\Geoprocessing\Data\TV\TV2025\reporting_V2\tv-2025-v2-classification_Irrigated_lands_reporting.docx")
 doc_metadata_table = reporting_doc.tables[0]
 t = []
 for i in doc_metadata_table.column_cells(0):
@@ -211,7 +217,10 @@ other_metadata ={'.//Esri/CreaDate': strftime('%Y%m%d', strptime(creation_date, 
                  './/dataIdInfo/idCitation/datasetSeries/issId': year,
                  './/dataIdInfo/dataExt/exDesc': f'Irrigation status for the {year} growing season.',
                  './/dataIdInfo/dataExt/tempEle/TempExtent/exTemp/TM_Period/tmBegin': f'{year}-03-01T00:00:00',
-                 './/dataIdInfo/dataExt/tempEle/TempExtent/exTemp/TM_Period/tmEnd': f'{year}-11-01T00:00:00'}
+                 './/dataIdInfo/dataExt/tempEle/TempExtent/exTemp/TM_Period/tmEnd': f'{year}-11-01T00:00:00',
+                 './/dataIdInfo/tpCat': 'Irrigated Lands',
+                 './/dataIdInfo/tpCat/TopicCatCd': 'Irrigated Lands',
+                 }
 
 #this looks for every item in the above dictionary in the root xml string, changes it, then finally updates the target xml file
 for d in other_metadata:
@@ -249,7 +258,7 @@ def get_path(elem):
     return '/'.join(reversed(path))
 
 for elem in root.iter():
-    if 'esc' in elem.tag.lower():
+    if 'cat' in elem.tag.lower():
         print(get_path(elem), '=', elem.text)
 
 #%%
@@ -261,7 +270,26 @@ pretty = minidom.parseString(tgt_md.xml).toprettyxml(indent='  ')
 print(pretty)
 #%%
 from arcgis.gis import GIS
-from arcgis.features import FeatureLayerCollection
 import getpass
 
-gis = GIS(username= '', password=getpass.getpass('ArcGIS Password: '))
+#this section will automatically upload the item to AGOL, but I haven't gotten it to work for portal yet
+#the data are mostly complete from what I can tell, I need another set of eyes on it to be sure, though
+gis = GIS(username= input('input arcgis username'), password=getpass.getpass('ArcGIS Password: '))
+
+zip_path = r"X:\Staging_X_Y\LandCover_Vegetation\BoiseValley\MachineLearning\RF_IrrigatedLands_2025_TV.zip"
+
+properties = {'type': 'Document Link',
+              'title': file_title,
+              'licenseInfo': TAC,
+              'tags': tags,
+              'credits': 'Idaho Department of Water Resources (IDWR)',
+              'description': description,
+              'snippet': summary,
+              'url': r'X:\Staging_X_Y\LandCover_Vegetation\BoiseValley\MachineLearning\RF_IrrigatedLands_2025_TV.zip',
+              'categories': ['/Categories/Irrigated Lands'],
+              'commentsEnabled': False,
+              'accessInformation': 'Idaho Department of Water Resources (IDWR)',
+              }
+for i in Path(x_staging_loc).glob('*.tif.xml'):
+    met = i
+zip_item = gis.content.add(item_properties = properties, data = zip_path, thumbnail = str(thumbnail_link), metadata = str(met))
