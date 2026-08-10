@@ -1,14 +1,18 @@
 #%%
 from pathlib import Path
-import shutil
+from shutil import copy
 from arcpy import metadata
-import os
-import time
+from os.path import getmtime
+from time import strftime, strptime, ctime, time
 import xml.etree.ElementTree as ET
 from docx import Document
 from python_docx_replace import docx_replace
+from RF_IrrigatedLands_Functions import LoadConfigFile
 
-year = '2025'
+parent_dir = Path(__file__).parent.absolute()
+config_file = parent_dir / "config_file.yml"
+config = LoadConfigFile(config_file)
+year = config['year']
 
 #a dictionary for file paths the key is the N: location name, value is X: location, abbreviated name, and full name
 # None is inserted where one is missing in either path
@@ -27,10 +31,8 @@ location_dict = {'BearRiverCompact':        ['BearRiver',         'BR',       'B
                  'TreasureValley':          ['BoiseValley',       'TV',       'Treasure Valley'],
                  }
 #region is a key lookup value for the location_dict (the N: location)
-area = 'br'
-for l in location_dict.keys():
-    if area.casefold() == str(location_dict[l][1]).casefold():
-        region = l
+area = config['area']
+region = [l for l in location_dict.keys() if area.casefold() == str(location_dict[l][1]).casefold()][0]
 
 x_drive_name = location_dict[region][0]
 abb_name = location_dict[region][1]
@@ -49,23 +51,34 @@ doc = Document(r"N:\IrrigatedLands\rf_metadata_template.docx")
 if not Path(x_staging_loc).exists():
     Path(x_staging_loc).mkdir(parents=True, exist_ok=True)
 
-#because this xml file is edited so heavily, we should be able to grab any xml as a template, but it would be best to get an xml for the region we are working in 
+#because this xml file is edited so heavily, we should be able to grab any xml as a template
 source_xml = list(Path(x_spatial_loc).glob('*.tif.xml'))[-1]
 new_xml = f'{x_staging_loc}\\{abb_name} {year} Random Forest Land Classification.tif.xml'
 
 #right now, it seems like if we always take a single template xml we can prevent most issues 
-shutil.copy(r"X:\Spatial\LandCover_Vegetation\SnakePlain\MachineLearning\ESPA_2024_RandomForest.tif.xml",  new_xml)
+copy(r"X:\Spatial\LandCover_Vegetation\SnakePlain\MachineLearning\ESPA_2024_RandomForest.tif.xml",  new_xml)
 
+#rename all files to the LOCATION_YYYY_RandomForest convention when copying to the x staging folder
 for f in Path(n_loc).glob('*.*'):
-    shutil.copy(f, x_staging_loc)
-
+    extension = '.'.join(f.name.split('.')[1:])
+    if '.doc' not in extension:
+        new_name = f'{abb_name}_{year}_RandomForest.{extension}'
+        new_file = f'{x_staging_loc}/{new_name}'
+        copy(f, new_file)
+    
 #----------------metadata elements------------------
 #the sections of the metadata document to parse
 sections = {'Summary':[], 'Description':[], 'Normal':[], 
             'Credits':[], 'Use limitations':[], 'Extras':[]}
 
-#probably easiest to dip into the report generated at classification to get this info
-reporting_doc = Document(r"C:\Users\mason.bull\OneDrive - State of Idaho\Desktop\Geoprocessing\Data\TV\TV2025\reporting_V2\tv-2025-v2-classification_Irrigated_lands_reporting.docx")
+#get the reporting doc to get the list of bands used out of it
+root_path = Path(config['training_data']).parent.parent
+dirs = []
+for n in [f.name for f in root_path.glob('**/*') if f.is_dir()]:
+    if 'reporting' in n:
+        dirs.append(n)
+
+reporting_doc = Document(root_path / dirs[-1] / f'{area}-{year}-v{dirs[-1].split('V')[-1]}-classification_Irrigated_lands_reporting.docx')
 doc_metadata_table = reporting_doc.tables[0]
 t = []
 for i in doc_metadata_table.column_cells(0):
@@ -73,6 +86,7 @@ for i in doc_metadata_table.column_cells(0):
     if i.text in 'Datasets Used':
         column_index = t.index(i.text)
 
+#the list of datasets we used in classification NOTE: this currently does not include datasets used to post process
 used_datasets = doc_metadata_table.cell(column_index, 1).text.strip("[]").replace("'", "").split(', ')
 datasets_dict = {
             'NASA/HLS/HLSL30/v002': ['USGS Landsat and ESA Sentinel Harmonized HLSL imagery', 'https://developers.google.com/earth-engine/datasets/catalog/NASA_HLS_HLSL30_v002'],
@@ -95,6 +109,7 @@ description_datasets = []
 reference_datasets = []
 post_process_datasets = []
 
+#make individual lists for the datasets we used and their references 
 for b in used_datasets:
     dataset = datasets_dict[b]
     num = used_datasets.index(b) + 2
@@ -141,11 +156,11 @@ summary = sections['Summary']
 extras = sections['Extras']
 #to preserve the original thumbnail after arcpy steals it, I'm creating two links 
 original_thumbnail_link = Path(Path(n_loc).parent / 'ForReview' / f'{abb_name}_{year}_thumbnail.png')
-thumbnail_link = original_thumbnail_link.parent.parent / f'{abb_name}_{year}_thumbnail.png'
-shutil.copy(original_thumbnail_link, Path(thumbnail_link))
-creation_date = time.strftime('%Y-%m-%d %H:%M:%S', time.strptime(time.ctime(os.path.getmtime(f'{n_loc}\\{abb_name} {year} Random Forest Land Classification.tif'))))
-publication_date = time.strftime('%Y-%m-%d %H:%M:%S', time.strptime(time.ctime(time.time())))
-edition_date = time.strftime('%Y-%m-%d', time.strptime(time.ctime(time.time())))
+thumbnail_link = original_thumbnail_link.parent.parent / f'{abb_name}_{year}_thumbnail.png' #NOTE: for whatever reason, this seems to cause problems. The file keeps moving after the code runs, which stops the code from running, but the code runs fine if you run it twice.
+copy(original_thumbnail_link, Path(thumbnail_link))                                         #which is why this line is here, to hedge our bets 
+creation_date = strftime('%Y-%m-%d %H:%M:%S', strptime(ctime(getmtime(f'{n_loc}\\{abb_name} {year} Random Forest Land Classification.tif'))))
+publication_date = strftime('%Y-%m-%d %H:%M:%S', strptime(ctime(time())))
+edition_date = strftime('%Y-%m-%d', strptime(ctime(time())))
 
 #----------------defining metadata----------------------
 for i in Path(x_staging_loc).glob('*.tif'):
@@ -153,6 +168,7 @@ for i in Path(x_staging_loc).glob('*.tif'):
 target_tif_meta = metadata.Metadata(target_tif)
 
 #updating of metadata pieces through the ESRI interface
+#NOTE: there might be a way we can skirt arcpy here? If we can manually edit the xml and overwrite it we could ostensibly save a complicated dependency, I'm not sure if that will work however, given that we have to specify metadata.Metadata()
 target_tif_meta.title = file_title
 target_tif_meta.accessConstraints = TAC
 target_tif_meta.tags = tags
@@ -161,14 +177,14 @@ target_tif_meta.thumbnailUri = str(thumbnail_link)
 target_tif_meta.description = description
 target_tif_meta.summary = summary
 
-#this coming section updates dates within the xml file because ESRI does not have a built in md method for dates.
+#this coming section updates dates within the xml file because ESRI does not have a built in md method for dates. It is, however, using the arc metadata template from the metadata object
 xml_string = target_tif_meta.xml
 root = ET.fromstring(xml_string)
 
-other_metadata ={'.//Esri/CreaDate': time.strftime('%Y%m%d', time.strptime(creation_date, '%Y-%m-%d %H:%M:%S')),
-                 './/Esri/ModDate': time.strftime('%Y%m%d', time.strptime(publication_date, '%Y-%m-%d %H:%M:%S')),
-                 './/Esri/SyncDate': time.strftime('%Y%m%d', time.strptime(publication_date, '%Y-%m-%d %H:%M:%S')),
-                 './/mdDateSt': time.strftime('%Y%m%d', time.strptime(creation_date, '%Y-%m-%d %H:%M:%S')),
+other_metadata ={'.//Esri/CreaDate': strftime('%Y%m%d', strptime(creation_date, '%Y-%m-%d %H:%M:%S')),
+                 './/Esri/ModDate': strftime('%Y%m%d', strptime(publication_date, '%Y-%m-%d %H:%M:%S')),
+                 './/Esri/SyncDate': strftime('%Y%m%d', strptime(publication_date, '%Y-%m-%d %H:%M:%S')),
+                 './/mdDateSt': strftime('%Y%m%d', strptime(creation_date, '%Y-%m-%d %H:%M:%S')),
                  './/dataIdInfo/idCitation/date': None,
                  './/dataIdInfo/idCitation/date/pubDate': publication_date,
                  './/dataIdInfo/idCitation/date/createDate': creation_date,
