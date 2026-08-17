@@ -18,6 +18,7 @@ import json
 import ee, geemap
 import re
 from numpy import zeros
+from matplotlib.ticker import FuncFormatter
 
 ee.Authenticate()
 ee.Initialize(project= 'idwr-450722')
@@ -134,48 +135,110 @@ ee.batch.Export.table.toDrive(collection=entire_aoi_et_values,
                               )#.start() #this gets commented out as a failsafe to not accidentally export the csv 
 
 #%%
-#the rest of the code to do the processing after the FC is exported
-et_data = pd.read_csv(r"C:\Users\mason.bull\OneDrive - State of Idaho\Desktop\Geoprocessing\Data\TV\et_trends\tv_et_trends.csv")
-#data from the FC CSV are coming in as single strings, so we need to break those up
+#getting the csv into the format we want before plotting
+et_data = pd.read_csv(r"C:\Users\mason.bull\OneDrive - State of Idaho\Desktop\Geoprocessing\Data\TV\et_trends\tv_et_lc_trends.csv")
+et_data = et_data.drop(columns=['.geo', 'system:index'])
 
-#find all instances of {some word}={some number} in each row of the csv
-expression = re.compile(r'(\w+)=([\d.]+)')
+#this gets us a row id to separate lines on instead of a year, incase there is an empty year
+et_data = et_data.reset_index(drop = True).rename_axis('row_id').reset_index()
 
-#split the found expression and save the data in a df
-d = {}
-for i in et_data.et:
-    for k, v in expression.findall(i):
-        name, date = k.rsplit('_', 1)
-        date = int(date)
-        d.setdefault(date, {})[name] = float(v)
-df = pd.DataFrame.from_dict(d, orient = 'index').sort_index()
-df.index.name = 'year'
+#the expression that is in each string that gets output by the EE export
+et_expression = re.compile(r'(\w+)=([\d$.]+)')
 
-first_melt = df.melt(id_vars=['eto_water','eto_desert','eto_all'],value_vars=['et_water','et_desert','et_all'], var_name='et_type', value_name='et', ignore_index=False)
-df_final = first_melt.melt(id_vars=['et_type','et'],value_vars=['eto_water','eto_desert','eto_all'], var_name='eto_type', value_name='eto', ignore_index=False)
+#function to find area or et values by crop, organize them, and neatly store them in a dataframe
+def parse_metrics(metric):
+    column_name = f'crop_{metric}'
+
+    items = [(row_id, int(k), float(v))
+             for row_id, s in zip(et_data['row_id'], et_data[column_name])
+             for k, v in et_expression.findall(s)]
+    return pd.DataFrame(items, columns = ['row_id', 'crop_code', column_name])
+
+et_long = parse_metrics('et')
+area_long = parse_metrics('area')
+
+#combine the crop type dfs and add a column for crop name and color code
+crop_long = et_long.merge(area_long, on = ['row_id', 'crop_code'], how = 'outer')
+crop_long['crop'] = crop_long['crop_code'].map(lambda c: cdl_lookup.get(str(c), {}).get('crop', f'unknown_{c}'))
+crop_long['color_code'] = crop_long['crop_code'].map(lambda c: cdl_lookup.get(str(c), {}).get('color', f'unknown_{c}'))
+
+columns_to_pivot = et_data[['row_id', 'year', 'et_all', 'et_water', 'et_desert', 'eto_all', 'eto_water', 'eto_desert']]
+
+#use a single pivot to get the data to a long format without having to stack up melt arguments
+filters_long = pd.wide_to_long(columns_to_pivot, stubnames=['et', 'eto'], i='row_id', 
+                               j = 'filter', sep='_', suffix=(r'\w+')).reset_index()
+
+#finalize and add new columns we want
+df_final = crop_long.merge(filters_long, on='row_id', how='inner')
 df_final['et_of'] = df_final['et']/df_final['eto']
+df_final['year'] = df_final['year'].astype(int)
+df_final['crop_area'] = df_final['crop_area']*9e-4
+for i in ['Water', 'Clouds/No Data', 'Grass/Pasture', 'Shrubland', 'Open Water', 'Perennial Ice/Snow',
+          'Forest', 'Developed', 'Deciduous Forest', 'Evergreen Forest', 'Woody Wetlands', 'Herbaceous Wetlands'
+          'Mixed Forest', 'Wetlands']: #pick lc types to exclude from plotting
+    df_final = df_final[df_final.crop != i]
+
+#make a palette for plotting crop types
+palette = {}
+for k in cdl_lookup:
+    palette.update({cdl_lookup[k]['crop']:cdl_lookup[k]['color']})
+#%%
 
 #plotting
+
+#plot of ET depth 
 fig, ax = plt.subplots()
-sns.lineplot(data=df_final, x = df_final.index, y = 'et', hue='et_type')
+sns.lineplot(data=df_final, x = 'year', y = 'et', hue='filter')
 ax.set_title('Treasure Valley ET')
+ax.set_xlim(2005, 2025)
 ax.set_ylabel('ET (mm)')
 ax.set_xlabel('Year')
 ax.legend(title = None, loc = 'center right')
+plt.gca().xaxis.set_major_formatter(FuncFormatter(lambda x,_: int(x)))
 fig.show()
 
+#plot of ETo
 fig, ax = plt.subplots()
-sns.lineplot(data=df_final, x = df_final.index, y = 'eto', hue='eto_type')
+sns.lineplot(data=df_final, x = 'year', y = 'eto', hue='filter')
 ax.set_title('Treasure Valley ETo')
+ax.set_xlim(2005, 2025)
 ax.set_ylabel('ETo (mm)')
 ax.set_xlabel('Year')
 ax.legend(title = None, loc = 'lower right')
+plt.gca().xaxis.set_major_formatter(FuncFormatter(lambda x,_: int(x)))
 fig.show()
 
+#plot of EToF
 fig, ax = plt.subplots()
-sns.lineplot(data=df_final, x = df_final.index, y = 'et_of', hue='et_type')
+sns.lineplot(data=df_final, x = 'year', y = 'et_of', hue='filter')
 ax.set_title('Treasure Valley EToF')
+ax.set_xlim(2005, 2025)
 ax.set_ylabel('EToF')
 ax.set_xlabel('Year')
 ax.legend(title = None, loc = 'lower right')
+plt.gca().xaxis.set_major_formatter(FuncFormatter(lambda x,_: int(x)))
+fig.show()
+
+#plot of area for each crop 
+fig, ax = plt.subplots()
+sns.lineplot(data = df_final, x = 'year', y = 'crop_area', palette= palette, hue = 'crop')
+ax.set_xlim(2005, 2024)
+ax.set_title('Area per crop')
+ax.set_ylabel('Area (km²)')
+ax.set_xlabel('Year')
+ax.legend(title = None)
+sns.move_legend(ax, 'upper center', bbox_to_anchor = (0.5,-0.1), ncols = 3)
+plt.gca().xaxis.set_major_formatter(FuncFormatter(lambda x,_: int(x)))
+fig.show()
+
+#plot of ET for each crop 
+fig, ax = plt.subplots()
+sns.lineplot(data = df_final, x = 'year', y = 'crop_et', palette= palette, hue = 'crop')
+ax.set_xlim(2005, 2025)
+ax.set_title('ET depth per crop')
+ax.set_ylabel('Depth (mm)')
+ax.set_xlabel('Year')
+ax.legend(title = None)
+sns.move_legend(ax, 'upper center', bbox_to_anchor = (0.5,-0.1), ncols = 3)
+plt.gca().xaxis.set_major_formatter(FuncFormatter(lambda x,_: int(x)))
 fig.show()
