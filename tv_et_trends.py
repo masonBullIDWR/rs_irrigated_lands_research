@@ -3,14 +3,7 @@ A script to calculate ET trends over time via OpenET Ensemble and NLCD data. Thi
 This will do the calculations and create a basic report as a word doc (hopefully)
 '''
 #%%set up cell, no calculations
-import rasterio
-from rasterio.features import rasterize
-from rasterio.features import shapes
-from rasterio.mask import mask
-from shapely.geometry import shape
 import geopandas as gpd
-import numpy as np
-import numpy.ma as ma
 import matplotlib.pyplot as plt
 import pandas as pd
 import seaborn as sns
@@ -63,7 +56,8 @@ cdl_all_mask = cdl.map(lambda img: ee.Image(img).remap(all, [0]*len(all), 1)).su
 cdl_lookup = json.load(open(r'C:\Users\mason.bull\OneDrive - State of Idaho\Desktop\Geoprocessing\Data\cdl_lookup.txt'))
 
 #%%
-#get data for ET and ETo
+#get data for ET and ETo via Earth Engine and export to Drive,
+#this is a pretty large export, so the .start() of the export is commented out until you want to use it 
 years_ee = ee.List(years_of_interest)
 
 #function to unpack some dictionaries later
@@ -136,6 +130,7 @@ ee.batch.Export.table.toDrive(collection=entire_aoi_et_values,
 
 #%%
 #getting the csv into the format we want before plotting
+#this is the csv that is exported from EE
 et_data = pd.read_csv(r"C:\Users\mason.bull\OneDrive - State of Idaho\Desktop\Geoprocessing\Data\TV\et_trends\tv_et_lc_trends.csv")
 et_data = et_data.drop(columns=['.geo', 'system:index'])
 
@@ -173,6 +168,7 @@ df_final = crop_long.merge(filters_long, on='row_id', how='inner')
 df_final['et_of'] = df_final['et']/df_final['eto']
 df_final['year'] = df_final['year'].astype(int)
 df_final['crop_area'] = df_final['crop_area']*9e-4
+
 for i in ['Water', 'Clouds/No Data', 'Grass/Pasture', 'Shrubland', 'Open Water', 'Perennial Ice/Snow',
           'Forest', 'Developed', 'Deciduous Forest', 'Evergreen Forest', 'Woody Wetlands', 'Herbaceous Wetlands'
           'Mixed Forest', 'Wetlands']: #pick lc types to exclude from plotting
@@ -182,6 +178,18 @@ for i in ['Water', 'Clouds/No Data', 'Grass/Pasture', 'Shrubland', 'Open Water',
 palette = {}
 for k in cdl_lookup:
     palette.update({cdl_lookup[k]['crop']:cdl_lookup[k]['color']})
+
+#find the ten largest lc types by area for each year to help clean up plots
+top_ten_set = set()
+for y in years_of_interest:
+    df = df_final[df_final.year == y]
+    df = df[df['filter'] == 'all']
+    largest = pd.DataFrame(df['crop_area'].nlargest(10))
+    for i in set(df_final.loc[list(largest.index)]['crop']):
+        top_ten_set.add(i)
+
+
+
 #%%
 
 #plotting
@@ -193,8 +201,10 @@ ax.set_title('Treasure Valley ET')
 ax.set_xlim(2005, 2025)
 ax.set_ylabel('ET (mm)')
 ax.set_xlabel('Year')
-ax.legend(title = None, loc = 'center right')
+handles, labels = ax.get_legend_handles_labels()
+ax.legend(title = None, loc = 'center right', handles = handles, labels = ['Only Crops', 'No Water', 'No Water or Desert'])
 plt.gca().xaxis.set_major_formatter(FuncFormatter(lambda x,_: int(x)))
+fig.savefig('et_depth.png', bbox_inches = 'tight')
 fig.show()
 
 #plot of ETo
@@ -204,8 +214,11 @@ ax.set_title('Treasure Valley ETo')
 ax.set_xlim(2005, 2025)
 ax.set_ylabel('ETo (mm)')
 ax.set_xlabel('Year')
+handles, labels = ax.get_legend_handles_labels()
+ax.legend(title = None, loc = 'center right', handles = handles, labels = ['Only Crops', 'No Water', 'No Water or Desert'])
 ax.legend(title = None, loc = 'lower right')
 plt.gca().xaxis.set_major_formatter(FuncFormatter(lambda x,_: int(x)))
+fig.savefig('eto.png', bbox_inches = 'tight')
 fig.show()
 
 #plot of EToF
@@ -215,8 +228,11 @@ ax.set_title('Treasure Valley EToF')
 ax.set_xlim(2005, 2025)
 ax.set_ylabel('EToF')
 ax.set_xlabel('Year')
+handles, labels = ax.get_legend_handles_labels()
+ax.legend(title = None, loc = 'center right', handles = handles, labels = ['Only Crops', 'No Water', 'No Water or Desert'])
 ax.legend(title = None, loc = 'lower right')
 plt.gca().xaxis.set_major_formatter(FuncFormatter(lambda x,_: int(x)))
+fig.savefig('etof.png', bbox_inches = 'tight')
 fig.show()
 
 #plot of area for each crop 
@@ -229,6 +245,7 @@ ax.set_xlabel('Year')
 ax.legend(title = None)
 sns.move_legend(ax, 'upper center', bbox_to_anchor = (0.5,-0.1), ncols = 3)
 plt.gca().xaxis.set_major_formatter(FuncFormatter(lambda x,_: int(x)))
+fig.savefig('crop_area.png', bbox_inches = 'tight')
 fig.show()
 
 #plot of ET for each crop 
@@ -241,4 +258,87 @@ ax.set_xlabel('Year')
 ax.legend(title = None)
 sns.move_legend(ax, 'upper center', bbox_to_anchor = (0.5,-0.1), ncols = 3)
 plt.gca().xaxis.set_major_formatter(FuncFormatter(lambda x,_: int(x)))
+fig.savefig('crop_et.png', bbox_inches = 'tight')
 fig.show()
+
+#these are plots of the largest crops by area, top ten in each year 
+df_final_top_ten = df_final.loc[df_final.crop.isin(top_ten_set)]
+#plot of area for each crop 
+fig, ax = plt.subplots()
+sns.lineplot(data = df_final_top_ten, x = 'year', y = 'crop_area', palette= palette, hue = 'crop')
+ax.set_xlim(2005, 2024)
+ax.set_ylim(0, 900)
+ax.set_title('Area per crop (top ten crops by area annually)')
+ax.set_ylabel('Area (km²)')
+ax.set_xlabel('Year')
+ax.legend(title = None)
+sns.move_legend(ax, 'upper center', bbox_to_anchor = (0.5,-0.1), ncols = 3)
+plt.gca().xaxis.set_major_formatter(FuncFormatter(lambda x,_: int(x)))
+fig.savefig('top_ten_crop_area.png', bbox_inches = 'tight')
+fig.show()
+
+#plot of ET for each crop 
+fig, ax = plt.subplots()
+sns.lineplot(data = df_final_top_ten, x = 'year', y = 'crop_et', palette= palette, hue = 'crop')
+ax.set_xlim(2005, 2025)
+ax.set_title('ET depth per crop (top ten crops by area annually)')
+ax.set_ylabel('Depth (mm)')
+ax.set_xlabel('Year')
+ax.legend(title = None)
+sns.move_legend(ax, 'upper center', bbox_to_anchor = (0.5,-0.1), ncols = 3)
+plt.gca().xaxis.set_major_formatter(FuncFormatter(lambda x,_: int(x)))
+fig.savefig('top_ten_crop_et.png', bbox_inches = 'tight')
+fig.show()
+#%%
+filters_dict = {'Water': [water, "'Water' is the least aggressive filter, "],
+                'Desert': [desert, "'Desert' is the more aggressive filter, "],
+                'All': [all, "'All' is the most aggressive filter, "]}
+
+for n in filters_dict:
+    item_names = [cdl_lookup[str(i)]['crop'] for i in filters_dict[n][0]]
+    item_names_end = item_names[-1]
+    item_names.remove(item_names_end)
+    item_names.insert(len(item_names) + 1, f'and {item_names_end}')
+    item_string = f'{filters_dict[n][1]}filtering out {', '.join(item_names)}.\n'
+    print(item_string)
+    filters_dict[n].append(item_string)
+
+#%%Create the document with figures and text
+from docx import Document
+from docx.shared import Inches
+from datetime import datetime
+date = datetime.now().strftime('%Y-%m-%d')
+doc = Document()
+doc.add_heading('Treasure Valley ET Trends', 0)
+doc.add_heading(f'Created by Mason Bull on {date}', 2)
+
+doc.add_heading('Background', 1)
+doc.add_paragraph(f'Data were created in GEE and ripped down for plotting. We used ET measurments from OpenET Ensemble Version {et_version}.' \
+                  'We gathered landcover information from the NASS CDL data. Due to data availability we can map ET trends as far back as 2005.')
+
+doc.add_heading('Methods', 1)
+p = doc.add_paragraph(f"ET data were first summed per pixel for each month between April and October for each year of the analysis." \
+                  "The summed growing season ET was then averaged across the study area. The study area is the boundary of the TVGWFM, from Glenns Ferry to Payette, with the western boundary of the Snake River, and East boundary of Long Tom and Black Canyon reservoirs." \
+                  "We also gathered ETo data from OpenET to calculate EToF across the region. ET data were filtered by three groups of landcover before the averaging calculation.\n")
+doc.add_paragraph(f"The first filtering group is referred to as 'Water'. {filters_dict['Water'][-1]}", style='List Bullet') 
+doc.add_paragraph(f"The first filtering group is referred to as 'Desert'. {filters_dict['Desert'][-1]}", style='List Bullet')
+doc.add_paragraph(f"The third filtering group is referred to as 'All'. {filters_dict['All'][-1]}", style='List Bullet')
+p.add_run(f"We then calculated ET and area of each crop type in the study area per CDL classification.")
+
+doc.add_heading('Figures', 1)
+doc.add_picture('et_depth.png')
+doc.add_paragraph("Figure 1. ET rate (mm) across the Treasure Valley from 2005 to 2024. Blue represents the heavily filtered 'All' class. Green represents the moderately filtered 'Desert' class. Orange represents the lightly filtered 'Water' class.")
+
+doc.add_picture('eto.png')
+doc.add_paragraph("Figure 2. ETo depth (mm) across the Treasure Valley from 2005 to 2024. Blue represents the heavily filtered 'All' class. Green represents the moderately filtered 'Desert' class. Orange represents the lightly filtered 'Water' class.")
+
+doc.add_picture('etof.png')
+doc.add_paragraph("Figure 3. EToF (unitless) across the Treasure Valley from 2005 to 2024. Blue represents the heavily filtered 'All' class. Green represents the moderately filtered 'Desert' class. Orange represents the lightly filtered 'Water' class.")
+
+doc.add_picture('top_ten_crop_area.png')
+doc.add_paragraph("Figure 4. Landcover area of the ten largest landcover classes in km² across the Treasure Valley from 2005 to 2024. Shrubland, water, and grass/pasture are excluded. Colors are the CDL landcover class color codes.")
+
+doc.add_picture('top_ten_crop_et.png')
+doc.add_paragraph("Figure 5. ET depth (mm) of the ten largest landcover classes in km² across the Treasure Valley from 2005 to 2024. Shrubland, water, and grass/pasture are excluded. Colors are the CDL landcover class color codes.")
+
+doc.save('report.docx')
