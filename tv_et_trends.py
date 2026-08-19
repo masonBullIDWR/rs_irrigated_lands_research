@@ -54,7 +54,24 @@ cdl_all_mask = cdl.map(lambda img: ee.Image(img).remap(all, [0]*len(all), 1)).su
 
 #a dictionary of values and colors for the cdl
 cdl_lookup = json.load(open(r'C:\Users\mason.bull\OneDrive - State of Idaho\Desktop\Geoprocessing\Data\cdl_lookup.txt'))
-
+colors = [cdl_lookup[c]['color'] for c in cdl_lookup]
+colors_set = set(colors)
+duplicates = [i for i in set(colors) if colors.count(i) > 1]
+dashes = [(), (5,2), (1,3), (3,2,1,2), (4,1,2,1), (0.5,0.5)]
+uses = {}
+for i in cdl_lookup:
+    item = cdl_lookup[i]
+    color = item['color']
+    if color in duplicates:
+        try: 
+            uses.update({color:uses[color]+1})
+            item.update({'dash': dashes[uses[color]-1]})
+        except:
+            uses.update({color:0})
+            uses.update({color:uses[color]+1})
+            item.update({'dash': dashes[uses[color]-1]})
+    else:
+        item.update({'dash': ()})
 #%%
 #get data for ET and ETo via Earth Engine and export to Drive,
 #this is a pretty large export, so the .start() of the export is commented out until you want to use it 
@@ -156,6 +173,7 @@ area_long = parse_metrics('area')
 crop_long = et_long.merge(area_long, on = ['row_id', 'crop_code'], how = 'outer')
 crop_long['crop'] = crop_long['crop_code'].map(lambda c: cdl_lookup.get(str(c), {}).get('crop', f'unknown_{c}'))
 crop_long['color_code'] = crop_long['crop_code'].map(lambda c: cdl_lookup.get(str(c), {}).get('color', f'unknown_{c}'))
+crop_long['dash_code'] = crop_long['crop_code'].map(lambda c: cdl_lookup.get(str(c), {}).get('dash', f'unknown_{c}'))
 
 columns_to_pivot = et_data[['row_id', 'year', 'et_all', 'et_water', 'et_desert', 'eto_all', 'eto_water', 'eto_desert']]
 
@@ -179,6 +197,10 @@ palette = {}
 for k in cdl_lookup:
     palette.update({cdl_lookup[k]['crop']:cdl_lookup[k]['color']})
 
+dash_palette = {}
+for k in cdl_lookup:
+    dash_palette.update({cdl_lookup[k]['crop']:cdl_lookup[k]['dash']})
+
 #find the ten largest lc types by area for each year to help clean up plots
 top_ten_set = set()
 for y in years_of_interest:
@@ -187,8 +209,6 @@ for y in years_of_interest:
     largest = pd.DataFrame(df['crop_area'].nlargest(10))
     for i in set(df_final.loc[list(largest.index)]['crop']):
         top_ten_set.add(i)
-
-
 
 #%%
 
@@ -237,7 +257,7 @@ fig.show()
 
 #plot of area for each crop 
 fig, ax = plt.subplots()
-sns.lineplot(data = df_final, x = 'year', y = 'crop_area', palette= palette, hue = 'crop')
+sns.lineplot(data = df_final, x = 'year', y = 'crop_area', palette= palette, hue = 'crop', style = 'crop', dashes = dash_palette)
 ax.set_xlim(2005, 2024)
 ax.set_title('Area per crop')
 ax.set_ylabel('Area (km²)')
@@ -250,7 +270,7 @@ fig.show()
 
 #plot of ET for each crop 
 fig, ax = plt.subplots()
-sns.lineplot(data = df_final, x = 'year', y = 'crop_et', palette= palette, hue = 'crop')
+sns.lineplot(data = df_final, x = 'year', y = 'crop_et', palette= palette, hue = 'crop', style = 'crop', dashes = dash_palette)
 ax.set_xlim(2005, 2025)
 ax.set_title('ET depth per crop')
 ax.set_ylabel('Depth (mm)')
@@ -263,15 +283,27 @@ fig.show()
 
 #these are plots of the largest crops by area, top ten in each year 
 df_final_top_ten = df_final.loc[df_final.crop.isin(top_ten_set)]
+
 #plot of area for each crop 
 fig, ax = plt.subplots()
-sns.lineplot(data = df_final_top_ten, x = 'year', y = 'crop_area', palette= palette, hue = 'crop')
+sns.lineplot(data = df_final_top_ten, x = 'year', y = 'crop_area', palette= palette, hue = 'crop', style = 'crop', dashes = dash_palette)
 ax.set_xlim(2005, 2024)
 ax.set_ylim(0, 900)
 ax.set_title('Area per crop (top ten crops by area annually)')
 ax.set_ylabel('Area (km²)')
 ax.set_xlabel('Year')
-ax.legend(title = None)
+sns.move_legend(ax, 'upper center', bbox_to_anchor = (0.5,-0.1), ncols = 3)
+plt.gca().xaxis.set_major_formatter(FuncFormatter(lambda x,_: int(x)))
+fig.savefig('top_ten_crop_area.png', bbox_inches = 'tight')
+fig.show()
+
+fig, ax = plt.subplots()
+sns.lineplot(data = df_final_top_ten, x = 'year', y = 'crop_area', palette= palette, hue = 'crop', style = 'crop', dashes = dash_palette)
+ax.set_xlim(2005, 2024)
+ax.set_ylim(0, 100)
+ax.set_title('Area per crop (zoomed, top ten crops by area annually)')
+ax.set_ylabel('Area (km²)')
+ax.set_xlabel('Year')
 sns.move_legend(ax, 'upper center', bbox_to_anchor = (0.5,-0.1), ncols = 3)
 plt.gca().xaxis.set_major_formatter(FuncFormatter(lambda x,_: int(x)))
 fig.savefig('top_ten_crop_area.png', bbox_inches = 'tight')
@@ -279,7 +311,7 @@ fig.show()
 
 #plot of ET for each crop 
 fig, ax = plt.subplots()
-sns.lineplot(data = df_final_top_ten, x = 'year', y = 'crop_et', palette= palette, hue = 'crop')
+sns.lineplot(data = df_final_top_ten, x = 'year', y = 'crop_et', palette= palette, hue = 'crop', style = 'crop', dashes = dash_palette)
 ax.set_xlim(2005, 2025)
 ax.set_title('ET depth per crop (top ten crops by area annually)')
 ax.set_ylabel('Depth (mm)')
@@ -289,7 +321,13 @@ sns.move_legend(ax, 'upper center', bbox_to_anchor = (0.5,-0.1), ncols = 3)
 plt.gca().xaxis.set_major_formatter(FuncFormatter(lambda x,_: int(x)))
 fig.savefig('top_ten_crop_et.png', bbox_inches = 'tight')
 fig.show()
-#%%
+
+#%%Create the document with figures and text
+from docx import Document
+from docx.shared import Inches
+from docx.shared import Pt
+from datetime import datetime
+date = datetime.now().strftime('%Y-%m-%d')
 filters_dict = {'Water': [water, "'Water' is the least aggressive filter, "],
                 'Desert': [desert, "'Desert' is the more aggressive filter, "],
                 'All': [all, "'All' is the most aggressive filter, "]}
@@ -303,12 +341,11 @@ for n in filters_dict:
     print(item_string)
     filters_dict[n].append(item_string)
 
-#%%Create the document with figures and text
-from docx import Document
-from docx.shared import Inches
-from datetime import datetime
-date = datetime.now().strftime('%Y-%m-%d')
 doc = Document()
+style = doc.styles['Normal']
+font = style.font
+font.name = 'Calibri'
+font.size = Pt(11)
 doc.add_heading('Treasure Valley ET Trends', 0)
 doc.add_heading(f'Created by Mason Bull on {date}', 2)
 
