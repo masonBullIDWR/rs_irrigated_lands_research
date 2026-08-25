@@ -1,12 +1,7 @@
 #%%
 from pathlib import Path
 from shutil import copy
-from arcpy import metadata
-from arcpy import mp
-from arcpy import Describe
-from arcpy import da
-from arcpy import SpatialReference
-from arcpy import SelectLayerByAttribute_management
+from arcpy import metadata, mp, SpatialReference
 from PIL import Image, ImageDraw, ImageFont
 from os.path import getmtime
 from time import strftime, strptime, ctime, time
@@ -15,41 +10,39 @@ from docx import Document
 from python_docx_replace import docx_replace
 from ruamel.yaml import YAML
 import json
+from thumbnail_generation import generateThumbnail
 
-#parent_dir = Path(__file__).parent.absolute()
-#config_file = parent_dir / "config_file.yml"
-#yaml = YAML()
-#yaml.preserve_quotes = (
-#    True
-#)
-#with open(config_file) as f:
-#    config = yaml.load(f)
-#year = str(config['year'])
-year = '2025'
-#a dictionary for file paths the key is the N: location name, value is X: location, abbreviated name, and full name
-# None is inserted where one is missing in either path
-location_dict = {'BearRiverCompact':        ['BearRiver',         'BR',       'Bear River'],
-                 'Bigwood_AOI':             ['None',              'None',     'Big Wood River'],
-                 'Bruneau-Grandview':       ['Bruneau-Grandview', 'BRG',      'Bruneau-Grandview Area'],
-                 'Camas':                   ['Camas',             'Camas',    'Camas County Area'],
-                 'EasternSnakePlainAquifer':['SnakePlain',        'ESPA',     'Eastern Snake Plain Aquifer'],
-                 'LakeLowell':              ['None',              'None',     'Lake Lowell Area'],
-                 'Malad':                   ['Malad',             'Malad',    'Malad Area'],
-                 'MountainHome':            ['MountainHome',      'MH',       'Mountain Home Area'],
-                 'NorthernIdaho':           ['CoeurdAlene',       'CDA',      "Coeur d'Alene Area"],
-                 'None':                    ['Payette',           'Payette',  'Payette Area'],
-                 'Portneuf':                ['Portneuf',          'Portneuf', 'Portneuf River Area'],
-                 'RaftRiverStudy':          ['RaftRiverValley',   'RR',       'Raft River Study Area'],
-                 'TreasureValley':          ['BoiseValley',       'WSPA',     'Western Snake Plain Aquifer'],
-                 }
+
+#-----------------------static variables -------------------------
+with open('metadata_dictionaries.json') as js:
+    file = json.load(js)
+    location_dict = file['location_dict']
+    datasets_dict = file['datasets_dict']
+
+#template metadata file for classified imagery
+template_xml = r"X:\Spatial\LandCover_Vegetation\SnakePlain\MachineLearning\ESPA_2024_RandomForest.tif.xml"
+
+#get the configuration info
+parent_dir = Path(__file__).parent.absolute()
+config_file = parent_dir / "config_file.yml"
+yaml = YAML()
+yaml.preserve_quotes = (True)
+with open(config_file) as f:
+    config = yaml.load(f)
+    
+year = str(config['year'])
+
 #region is a key lookup value for the location_dict (the N: location)
-#area = config['area']
-#if area != 'tv':
-#    region = [l for l in location_dict.keys() if area.casefold() == str(location_dict[l][1]).casefold()][0]
-#else:
-#    region = 'TreasureValley'
-region = 'TreasureValley'
+area = config['area']
 
+#this if is a weird edge case with the renaming of the Treasure Valley and how we are handling that moving forward
+if area != 'tv':
+    region = [l for l in location_dict.keys() if area.casefold() == str(location_dict[l][1]).casefold()][0]
+else:
+    region = 'TreasureValley'
+
+#path to root folder of training data to find the reporting folder
+root_path = Path(config['training_data']).parent.parent
 
 x_drive_name = location_dict[region][0] #ie., BoiseValley
 abb_name = location_dict[region][1] #ie., TV
@@ -62,94 +55,24 @@ x_staging_loc = f'X:\\Staging_X_Y\\LandCover_Vegetation\\{x_drive_name}\\Machine
 metadata_loc = f'N:\\IrrigatedLands\\rf_metadata_template.docx'
 
 #metadata document in a docx format for easy editing when things need changed
-doc = Document(r"N:\IrrigatedLands\rf_metadata_template.docx")
+doc = Document(metadata_loc)
 
-#%% This section makes the thumbnail for the portal item 
-#section to make the map for the thumbnail
-template_aprx = r"C:\Users\mason.bull\OneDrive - State of Idaho\Desktop\Geoprocessing\ArcProProjects\template\template_3.aprx"
-aprx = mp.ArcGISProject(template_aprx)
-display_map = aprx.listMaps("DisplayMap")[0]
-display_map.spatialReference = SpatialReference(8826)
-tiff_layer = display_map.addLayer(mp.LayerFile(r"N:\IrrigatedLands\TreasureValley\RandomForest_2025\ForRelease\TV_2025_RandomForest.tif.lyrx"))[0]
-tiff_layer.name = f'{abb_name}_{year}_classification'
-layout = aprx.listLayouts('ThumbnailLayout')[0]
-SelectLayerByAttribute_management(tiff_layer)
-map_frame = layout.listElements()[0]
-layer_description =Describe(tiff_layer)
-layer_type = layer_description.dataType
-map_frame.zoomToAllLayers(True)
-layout.exportToPNG('insert.png', 72)
-
-#this section creates the thumbnail image and title
-white = (255,255,255)
-gray = (142,142,142)
-blue = (36,117,183)
-banner_image = Image.new(mode = 'RGB', size = [720,130], color = blue)
-banner_text = 'Zipped File'
-banner_draw = ImageDraw.Draw(banner_image)
-banner_draw.text([60, 7], banner_text, font = ImageFont.truetype(font = 'Avenir Next LT Pro Demi.otf', size = 120), anchor = 'lt')
-banner = banner_image.rotate(90, expand=True)
-
-thumbnail = Image.new(mode = 'RGB', size = [1080, 720], color = white)
-logo = Image.open('IDWRLogo.png')
-title_image = Image.new(mode = 'RGB', size = [820,240], color = white)
-title_draw = ImageDraw.Draw(title_image)
-font_size = 1
-image_fraction = 0.9
-title_text = f'{year} {full_name} Irrigated Lands Machine Learning'
-title_font = ImageFont.truetype(font='Avenir Next LT Pro Demi.otf', size=font_size)
-font_width = title_font.getbbox(title_text)[2] - title_font.getbbox(title_text)[0]
-while font_width < image_fraction*title_image.size[0]:
-    font_size +=1
-    title_font = ImageFont.truetype(font='Avenir Next LT Pro Demi.otf', size=font_size)
-    font_width = title_font.getbbox(title_text)[2] - title_font.getbbox(title_text)[0]
-    if font_size >= 100:
-        break
-if font_size < 40:
-    font_size = 50
-    title_font = ImageFont.truetype(font='Avenir Next LT Pro Demi.otf', size=font_size)
-    words = title_text.split()
-    word_count = len(words)
-    insert_index = -(word_count//-2) # Where a "\n" line break will go
-    if word_count % 2 == 0: # I prefer more words to be on the top line than the bottom, this moves the "\n" later
-        insert_index += 1
-    words.insert(insert_index, "\n")
-    words.append(" ")
-    title_text = " ".join(words)
-else:
-    title_text = title_text
-
-if font_size > 50:
-    title_draw.text([410,70], title_text, fill=gray, font=title_font, anchor="mm", align="center")
-else:
-    title_draw.multiline_text([410,70], title_text, fill=gray, font=title_font, anchor="mm", align="center")
-title_image_path = "thumbnail_title.png"
-title_image.save(title_image_path)
-
-#this combines the thumbnail and map images into a single thumbnail that gets saved
-thumbnail_image = Image.new(mode="RGB", size=(1100, 720), color=white)
-map_image = Image.open('insert.png')
-thumbnail_image.paste(banner, (941,0))
-thumbnail_image.paste(logo, (30,20))
-thumbnail_image.paste(map_image, (240,-20))
-thumbnail_image.paste(title_image, (100, 590))
-
-background_image = Image.new(mode = 'RGB', size = (1280,720), color = white)
-background_image.paste(thumbnail_image, (75,0))
-
-background_image.save('thumbnail.png')
+if not Path(Path.cwd()/'temp').exists():
+    Path(Path.cwd()/'temp').mkdir()
+temp_folder = str(Path.cwd()/'temp')
 #%%
-breaker = ahh
+#make the thumbnail for the portal item 
+generateThumbnail(year, full_name, temp_folder, n_loc)
 
 #----------------file setup------------------------
 if not Path(x_staging_loc).exists():
     Path(x_staging_loc).mkdir(parents=True, exist_ok=True)
 
-#because this xml file is edited so heavily, we should be able to grab any xml as a template
 new_xml = f'{x_staging_loc}\\{abb_name}_{year}_RandomForest.tif.xml'
 
+#because this xml file is edited so heavily, we should be able to grab any xml as a template
 #right now, it seems like if we always take a single template xml we can prevent most issues 
-copy(r"X:\Spatial\LandCover_Vegetation\SnakePlain\MachineLearning\ESPA_2024_RandomForest.tif.xml",  new_xml)
+copy(template_xml,  new_xml)
 
 #rename all files to the LOCATION_YYYY_RandomForest convention when copying to the x staging folder
 for f in Path(n_loc).glob('*.*'):
@@ -158,19 +81,16 @@ for f in Path(n_loc).glob('*.*'):
         new_name = f'{abb_name}_{year}_RandomForest.{extension}'
         new_file = f'{x_staging_loc}/{new_name}'
         copy(f, new_file)
-    
-#----------------metadata elements------------------
-#the sections of the metadata document to parse
-sections = {'Summary':[], 'Description':[], 'Normal':[], 
-            'Credits':[], 'Use limitations':[], 'Extras':[]}
 
+#----------------metadata elements------------------
 #get the reporting doc to get the list of bands used out of it
-root_path = Path(config['training_data']).parent.parent
 dirs = []
 for n in [f.name for f in root_path.glob('**/*') if f.is_dir()]:
     if 'reporting' in n:
         dirs.append(n)
 
+#the new method is to get reporting info in a json, but the old format is just a word doc
+#this accounts for both methods automatically
 jsons = [i for i in Path(root_path / dirs[-1]).glob('*.json')]
 if jsons[0].exists():
     classification_stats = json.dumps(open(jsons[0]))
@@ -197,23 +117,8 @@ else:
 
     #the list of datasets we used in classification NOTE: this currently does not include datasets used to post process
     used_datasets = doc_metadata_table.cell(column_index, 1).text.strip("[]").replace("'", "").split(', ')
-datasets_dict = {
-            'NASA/HLS/HLSL30/v002': ['USGS Landsat and ESA Sentinel Harmonized HLSL imagery', 'https://developers.google.com/earth-engine/datasets/catalog/NASA_HLS_HLSL30_v002'],
-            'NASA/HLS/HLSS30/v002': ['USGS Landsat and ESA Sentinel Harmonized HLSS imagery', 'https://developers.google.com/earth-engine/datasets/catalog/NASA_HLS_HLSS30_v002'],
-            'projects/sat-io/open-datasets/OREGONSTATE/PRISM_800_MONTHLY': ['800m PRISM climate data', 'Daly, C., Halbleib, M., Smith, J.I., Gibson, W.P., Doggett, M.K., Taylor, G.H., Curtis, J. & Pasteris, P.A. (2008). Physiographically sensitive mapping of climatological temperature and precipitation across the conterminous United States. International Journal of Climatology, 28, 2031-2064. [doi:10.1002/joc.1688](https://doi.org/10.1002/joc.1688)'],
-            'USGS/3DEP/10m_collection': ['USGS 3DEP national DEM', 'https://developers.google.com/earth-engine/datasets/catalog/USGS_3DEP_10m'],
-            'projects/openet/assets/ensemble/conus/gridmet/monthly/v2_0': ['OpenET Ensemble Evpotranspiration, Version 2.0', 'https://developers.google.com/earth-engine/datasets/catalog/OpenET_ENSEMBLE_CONUS_GRIDMET_MONTHLY_v2_0'],
-            'projects/openet/assets/ensemble/conus/gridmet/monthly/v2_1': ['OpenET Ensemble Evpotranspiration, Version 2.1', 'https://developers.google.com/earth-engine/datasets/catalog/OpenET_ENSEMBLE_CONUS_GRIDMET_MONTHLY_v2_1'],
-            'LANDSAT/LT05/C02/T1_L2': ['USGS Landsat 5 Collection 2, Tier 1 imagery', 'https://developers.google.com/earth-engine/datasets/catalog/LANDSAT_LT05_C02_T1_L2'],
-            'LANDSAT/LT07/C02/T1_L2': ['USGS Landsat 7 Collection 2, Tier 1 imagery', 'https://developers.google.com/earth-engine/datasets/catalog/LANDSAT_LT07_C02_T1_L2'],
-            'users/gena/global-hand/hand-100': ['Height Above Nearest Drainage topography', 'Donchyts, G., Winsemius, H., Schellekens, J., Erickson, T., Gao, H., Savenije, H., & van de Giesen, N. (2016). Global 30m height above the nearest drainage (HAND). Geophysical Research Abstracts, 18, EGU2016-17445-3. EGU General Assembly 2016.'],
-            'USDA/NASS/CDL': ['USDA Cropland Data Layer', 'https://developers.google.com/earth-engine/datasets/catalog/USDA_NASS_CDL'],
-            'USDA/NAIP/DOQQ': ['USDA National Agriculture Imagery Program high resolution imagery', 'https://developers.google.com/earth-engine/datasets/catalog/USDA_NAIP_DOQQ'],
-            'projects/idwr-450722/assets/METRIC': ['IDWR generated METRIC evapotranspiration imagery', 'https://data-idwr.hub.arcgis.com/pages/evapotranspiration'],
-            'POU': ['IDWR Place of Use Water Right polygons', 'https://data-idwr.hub.arcgis.com/documents/dcadb8412de74f468ce802d61361ca0a/about'],
-            'MERIT/Hydro/v1_0_1': ['MERIT Global Hydrography flow direction', 'https://developers.google.com/earth-engine/datasets/catalog/MERIT_Hydro_v1_0_1#description'],
-            }
 
+#empty lists to be filled later 
 description_datasets = []
 reference_datasets = []
 post_process_datasets = []
@@ -246,6 +151,10 @@ dict = {'Region full': full_name,
         'Post Process': formatted_post_process}
 docx_replace(doc=doc, **dict)
 
+#the sections of the metadata document to parse
+sections = {'Summary':[], 'Description':[], 'Normal':[], 
+            'Credits':[], 'Use limitations':[], 'Extras':[]}
+
 #a loop to grab the strings from the updated document, get them into a single string, and fill out the dictionary
 for s in sections.keys():
     for p in doc.paragraphs:
@@ -266,9 +175,9 @@ description = sections['Description']
 summary = sections['Summary']
 extras = sections['Extras']
 #to preserve the original thumbnail after arcpy steals it, I'm creating two links 
-original_thumbnail_link = 'thumbnail.png'
-thumbnail_link = 'thumbnail_backup.png'         #NOTE: for whatever reason, this seems to cause problems. The file keeps moving after the code runs, which stops the code from running, but the code runs fine if you run it twice.
-copy(original_thumbnail_link, thumbnail_link)   #which is why this line is here, to hedge our bets 
+original_thumbnail_link = Path(temp_folder) / 'thumbnail.png'
+thumbnail_link = Path(temp_folder) / 'thumbnail_backup.png' #NOTE: for whatever reason, this seems to cause problems. The file keeps moving after the code runs, which stops the code from running, but the code runs fine if you run it twice.
+copy(original_thumbnail_link, thumbnail_link)         #which is why this line is here, to hedge our bets 
 creation_date = strftime('%Y-%m-%d %H:%M:%S', strptime(ctime(getmtime(str(list(Path(n_loc).glob('*.tif'))[0])))))
 publication_date = strftime('%Y-%m-%d %H:%M:%S', strptime(ctime(time())))
 edition_date = strftime('%Y-%m-%d', strptime(ctime(time())))
@@ -279,12 +188,14 @@ for i in Path(x_staging_loc).glob('*.tif'):
 target_tif_meta = metadata.Metadata(target_tif)
 
 #updating of metadata pieces through the ESRI interface
-#NOTE: there might be a way we can skirt arcpy here? If we can manually edit the xml and overwrite it we could ostensibly save a complicated dependency, I'm not sure if that will work however, given that we have to specify metadata.Metadata()
 target_tif_meta.title = file_title
 target_tif_meta.accessConstraints = TAC
 target_tif_meta.tags = tags
 target_tif_meta.credits = 'Idaho Department of Water Resources (IDWR)'
-target_tif_meta.thumbnailUri = str(thumbnail_link)
+try:
+    target_tif_meta.thumbnailUri = str(thumbnail_link)
+except:
+    target_tif_meta.thumbnailUri = str(original_thumbnail_link)
 target_tif_meta.description = description
 target_tif_meta.summary = summary
 
@@ -388,29 +299,3 @@ if use_helpers:
     pretty = minidom.parseString(tgt_md.xml).toprettyxml(indent='  ')
     print(pretty)
 
-#%%
-from arcgis.gis import GIS
-
-#this section will create an item in portal given the inputs from metadata creation above 
-#portal is authorized via ArcGIS Pro on your machine, and will use whatever portal you have active as the destination portal
-#make sure that your active portal in Arc is Enterprise Portal (https://gis.idwr.idaho.gov/portal), not AGOL(https://arcgis.com)
-gis = GIS('pro')
-
-zip_file_path = fr"//dwrwbpublic/GIS/Spatial/LandCover_Vegetation/{x_drive_name}/RF_IrrigatedLands_{year}_{abb_name}.zip"
-portal_path ='https://research.idwr.idaho.gov/' + '/'.join(zip_file_path.split('/')[3:])
-
-properties = {'type': 'Document Link',
-              'title': file_title,
-              'licenseInfo': TAC,
-              'tags': tags,
-              'credits': 'Idaho Department of Water Resources (IDWR)',
-              'description': description,
-              'snippet': summary,
-              'url': portal_path,
-              'categories': ['/Categories/Irrigated Lands'],
-              'commentsEnabled': False,
-              'accessInformation': 'Idaho Department of Water Resources (IDWR)',
-              }
-for i in Path(x_staging_loc).glob('*.tif.xml'):
-    met = i
-zip_item = gis.content.add(item_properties = properties, data = zip_file_path, thumbnail = str(thumbnail_link), metadata = str(met))

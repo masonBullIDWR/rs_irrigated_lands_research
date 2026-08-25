@@ -1,0 +1,35 @@
+# Configuration file for running the IDWR Irrigated Lands classification model
+# do NOT include quotations (" ", ' ') for any values in this file
+
+# Type the name of your project area, will be used in file naming
+area: tv
+
+# Enter a registered Google Earth Engine project ID
+GEE_project_ID: idwr-450722
+
+# Controls whether or not to export model results, where "False" is a boolean
+# and indicates model is in testing mode and will not export classification. 
+mode: True
+
+#Enter one year for the model run
+year: 2025
+
+# Enter start month and date for image feature search 
+# (e.g.,[ 1, 1], the [month, day] for January 1)
+start: [3, 1]
+
+# Enter end month and date for image feature search 
+# (e.g., [ 12, 31], the [month, day] for December 31)
+end: [11, 01]
+
+# This field will auto-populate with URL  to an IDWR Irrigated Lands AOI, 
+# otherwise provide file path to a shapefile
+aoi: 
+ C:\Users\mason.bull\OneDrive - State of Idaho\Desktop\Geoprocessing\Data\TV\TV_and_MH_outline.shp
+
+# Provide the classification export resolution 
+scale: 30
+
+# Path to the training data shapefile for classification
+training_data: 
+ C:\Users\mason.bull\OneDrive - State of Idaho\Desktop\Geoprocessing\Data\TV\TV2025\shp\tv_2025_training_data.shp

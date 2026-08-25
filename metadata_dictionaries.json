@@ -1,0 +1,31 @@
+{"location_dict": {"BearRiverCompact":      ["BearRiver",         "BR",       "Bear River"],
+                 "Bigwood_AOI":             ["None",              "None",     "Big Wood River"],
+                 "BruneauGrandview":        ["Bruneau-Grandview", "BRG",      "Bruneau-Grandview Area"],
+                 "Camas":                   ["Camas",             "Camas",    "Camas County Area"],
+                 "EasternSnakePlainAquifer":["SnakePlain",        "ESPA",     "Eastern Snake Plain Aquifer"],
+                 "LakeLowell":              ["None",              "None",     "Lake Lowell Area"],
+                 "Malad":                   ["Malad",             "Malad",    "Malad Area"],
+                 "MountainHome":            ["MountainHome",      "MH",       "Mountain Home Area"],
+                 "NorthernIdaho":           ["CoeurdAlene",       "CDA",      "Coeur d'Alene Area"],
+                 "None":                    ["Payette",           "Payette",  "Payette Area"],
+                 "Portneuf":                ["Portneuf",          "Portneuf", "Portneuf River Area"],
+                 "RaftRiverStudy":          ["RaftRiverValley",   "RR",       "Raft River Study Area"],
+                 "TreasureValley":          ["BoiseValley",       "WSPA",     "Western Snake Plain Aquifer"]
+                 },
+"datasets_dict": {
+            "NASA/HLS/HLSL30/v002": ["USGS Landsat and ESA Sentinel Harmonized HLSL imagery", "https://developers.google.com/earth-engine/datasets/catalog/NASA_HLS_HLSL30_v002"],
+            "NASA/HLS/HLSS30/v002": ["USGS Landsat and ESA Sentinel Harmonized HLSS imagery", "https://developers.google.com/earth-engine/datasets/catalog/NASA_HLS_HLSS30_v002"],
+            "projects/sat-io/open-datasets/OREGONSTATE/PRISM_800_MONTHLY": ["800m PRISM climate data", "Daly, C., Halbleib, M., Smith, J.I., Gibson, W.P., Doggett, M.K., Taylor, G.H., Curtis, J. & Pasteris, P.A. (2008). Physiographically sensitive mapping of climatological temperature and precipitation across the conterminous United States. International Journal of Climatology, 28, 2031-2064. [doi:10.1002/joc.1688](https://doi.org/10.1002/joc.1688)"],
+            "USGS/3DEP/10m_collection": ["USGS 3DEP national DEM", "https://developers.google.com/earth-engine/datasets/catalog/USGS_3DEP_10m"],
+            "projects/openet/assets/ensemble/conus/gridmet/monthly/v2_0": ["OpenET Ensemble Evpotranspiration, Version 2.0", "https://developers.google.com/earth-engine/datasets/catalog/OpenET_ENSEMBLE_CONUS_GRIDMET_MONTHLY_v2_0"],
+            "projects/openet/assets/ensemble/conus/gridmet/monthly/v2_1": ["OpenET Ensemble Evpotranspiration, Version 2.1", "https://developers.google.com/earth-engine/datasets/catalog/OpenET_ENSEMBLE_CONUS_GRIDMET_MONTHLY_v2_1"],
+            "LANDSAT/LT05/C02/T1_L2": ["USGS Landsat 5 Collection 2, Tier 1 imagery", "https://developers.google.com/earth-engine/datasets/catalog/LANDSAT_LT05_C02_T1_L2"],
+            "LANDSAT/LT07/C02/T1_L2": ["USGS Landsat 7 Collection 2, Tier 1 imagery", "https://developers.google.com/earth-engine/datasets/catalog/LANDSAT_LT07_C02_T1_L2"],
+            "users/gena/global-hand/hand-100": ["Height Above Nearest Drainage topography", "Donchyts, G., Winsemius, H., Schellekens, J., Erickson, T., Gao, H., Savenije, H., & van de Giesen, N. (2016). Global 30m height above the nearest drainage (HAND). Geophysical Research Abstracts, 18, EGU2016-17445-3. EGU General Assembly 2016."],
+            "USDA/NASS/CDL": ["USDA Cropland Data Layer", "https://developers.google.com/earth-engine/datasets/catalog/USDA_NASS_CDL"],
+            "USDA/NAIP/DOQQ": ["USDA National Agriculture Imagery Program high resolution imagery", "https://developers.google.com/earth-engine/datasets/catalog/USDA_NAIP_DOQQ"],
+            "projects/idwr-450722/assets/METRIC": ["IDWR generated METRIC evapotranspiration imagery", "https://data-idwr.hub.arcgis.com/pages/evapotranspiration"],
+            "POU": ["IDWR Place of Use Water Right polygons", "https://data-idwr.hub.arcgis.com/documents/dcadb8412de74f468ce802d61361ca0a/about"],
+            "MERIT/Hydro/v1_0_1": ["MERIT Global Hydrography flow direction", "https://developers.google.com/earth-engine/datasets/catalog/MERIT_Hydro_v1_0_1#description"]
+            }
+        }
