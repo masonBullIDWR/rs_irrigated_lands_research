@@ -8,7 +8,6 @@ template_aprx_path = r"N:\IrrigatedLands\portal_thumbnail_template_aprx\portal_t
 logo_path = 'IDWRLogo.png'
 font_path = 'Avenir Next LT Pro Demi.otf'
 
-
 white = (255,255,255)
 gray = (142,142,142)
 blue = (36,117,183)
@@ -18,8 +17,9 @@ banner_size = [720, 130]
 title_size = [820,240]
 thumbnail_size = (1100, 720)
 background_size = (1280,720)
+
 def generateThumbnail(year, full_name, temp_folder, n_loc):
-    '''Creates a thumbnail at the location'''
+    '''Creates a thumbnail at the location temp/thumbnail.png'''
 
     title = f'{year} {full_name} Irrigated Lands Machine Learning'
     def makeMap(template_aprx = template_aprx_path, dpi = 72):
