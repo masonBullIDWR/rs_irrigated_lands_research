@@ -1,8 +1,7 @@
 #%%
 from pathlib import Path
 from shutil import copy
-from arcpy import metadata, mp, SpatialReference
-from PIL import Image, ImageDraw, ImageFont
+from arcpy import metadata
 from os.path import getmtime
 from time import strftime, strptime, ctime, time
 import xml.etree.ElementTree as ET
@@ -10,7 +9,7 @@ from docx import Document
 from python_docx_replace import docx_replace
 from ruamel.yaml import YAML
 import json
-from thumbnail_generation import generateThumbnail
+import thumbnail_generation 
 
 
 #-----------------------static variables -------------------------
@@ -64,7 +63,7 @@ if not Path(Path.cwd()/'temp').exists():
 temp_folder = str(Path.cwd()/'temp')
 
 #make the thumbnail for the portal item 
-generateThumbnail(year, full_name, temp_folder, n_loc)
+thumbnail_generation.generateThumbnail(year, full_name, temp_folder, n_loc)
 
 #----------------file setup------------------------
 def setupDirectories(to_location = x_staging_loc, from_location = Path(n_loc)):
