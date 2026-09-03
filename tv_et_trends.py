@@ -12,13 +12,17 @@ import ee, geemap
 import re
 from numpy import zeros
 from matplotlib.ticker import FuncFormatter
+from scipy import stats
+from pathlib import Path
 
 ee.Authenticate()
 ee.Initialize(project= 'idwr-450722')
 ee.data.setWorkloadTag('tv-et-trends')
 
+first_year = 2005
+final_year = 2024
 #cdl data don't start in the TV until 2005
-years_of_interest = list(range(2005, 2025))
+years_of_interest = list(range(first_year, final_year + 1))
 
 et_version = 2.0
 et_options = {2.0 : ['v2_0', '2.0'],
@@ -210,28 +214,93 @@ for y in years_of_interest:
     for i in set(df_final.loc[list(largest.index)]['crop']):
         top_ten_set.add(i)
 
-#%%
+df_final_top_ten = df_final.loc[df_final.crop.isin(top_ten_set)]
 
+def linearRegression(ind, dep):
+    slope, intercept, r_value, p_value, std_err = stats.linregress(df_final[df_final['filter'] == 'all'][ind], df_final[df_final['filter'] == 'all'][dep])
+    return slope, intercept, r_value, p_value, std_err
+def getPReport(p_value):
+    if p_value < 0.001:
+        p = 'p < 0.001'
+    elif p_value < 0.01 and p_value > 0.001:
+        p = 'p < 0.01'
+    elif p_value < 0.05 and p_value >0.01:
+        p = 'p < 0.05'
+    else:
+        p = f'p = {p_value:.3f}'
+    return p
+#%%
 #plotting
 
 #plot of ET depth 
 fig, ax = plt.subplots()
+slope, intercept, r_value, p_value, std_err = linearRegression('year', 'et')
+#regplot give the trendline of the data, it only seems necessary to include it for one type of data
+sns.regplot(data=df_final[df_final['filter'] == 'all'], x = 'year', y = 'et', color='blue', scatter = False, line_kws={'linestyle': 'dashed'})
+#sns.regplot(data=df_final[df_final['filter'] == 'desert'], x = 'year', y = 'et', color='green', scatter = False)
+#sns.regplot(data=df_final[df_final['filter'] == 'water'], x = 'year', y = 'et', color='orange', scatter = False)
 sns.lineplot(data=df_final, x = 'year', y = 'et', hue='filter')
+ax.text(2007, 540, f'r² = {r_value**2:.2f}\nslope = {slope:.2f}, {getPReport(p_value)}') #scipy reports the r value, need to square it for reporting
 ax.set_title('Treasure Valley ET')
-ax.set_xlim(2005, 2025)
+ax.set_xlim(first_year, final_year)
 ax.set_ylabel('ET (mm)')
 ax.set_xlabel('Year')
 handles, labels = ax.get_legend_handles_labels()
-ax.legend(title = None, loc = 'center right', handles = handles, labels = ['Only Crops', 'No Water', 'No Water or Desert'])
+ax.legend(title = None, handles = handles, labels = ['Only Crops', 'No Water', 'No Water or Desert'])
+sns.move_legend(ax, 'upper center', bbox_to_anchor = (0.5,-0.1), ncols = 3)
 plt.gca().xaxis.set_major_formatter(FuncFormatter(lambda x,_: int(x)))
 fig.savefig('et_depth.png', bbox_inches = 'tight')
 fig.show()
 
+#%%
+def makePlot(dep, plot_focus, y_axis_lab, ET_plot, plot_file_name, text_x = None, text_y = None, dataframe = df_final, ind= 'year', show = False, save = False, y_lim = (None, None)):
+    fig, ax = plt.subplots()
+    if ET_plot:
+        sns.lineplot(data=dataframe, x = ind, y = dep, hue='filter')
+        slope, intercept, r_value, p_value, std_err = linearRegression(ind, dep)
+        #regplot give the trendline of the data, it only seems necessary to include it for one type of data
+        sns.regplot(data=dataframe[dataframe['filter'] == 'all'], x = ind, y = dep, color='blue', scatter = False, line_kws={'linestyle': 'dashed'})
+        #sns.regplot(data=df_final[df_final['filter'] == 'desert'], x = 'year', y = 'et', color='green', scatter = False)
+        #sns.regplot(data=df_final[df_final['filter'] == 'water'], x = 'year', y = 'et', color='orange', scatter = False)
+        ax.text(text_x, text_y, f'r² = {r_value**2:.2f}\nslope = {slope:.2f}, {getPReport(p_value)}') #scipy reports the r value, need to square it for reporting
+        ax.set_title(f'Treasure Valley {plot_focus}')
+    else:
+        sns.lineplot(data = dataframe, x = 'year', y = 'crop_area', palette= palette, hue = 'crop', style = 'crop', dashes = dash_palette)
+        ax.set_title(plot_focus)
+    ax.set_xlim(first_year, final_year)
+    ax.set_ylim(y_lim)
+    ax.set_ylabel(y_axis_lab)
+    ax.set_xlabel('Year')
+    handles, _ = ax.get_legend_handles_labels()
+    if ET_plot:
+        ax.legend(title = None, handles = handles, labels = ['Only Crops', 'No Water', 'No Water or Desert'])
+    sns.move_legend(ax, 'upper center', bbox_to_anchor = (0.5,-0.1), ncols = 3)
+    plt.gca().xaxis.set_major_formatter(FuncFormatter(lambda x,_: int(x)))
+    if save:
+        fig.savefig(f'{plot_file_name}.png', bbox_inches = 'tight')
+        print(f'Plot saved to {str(Path.cwd()/plot_file_name)}.png')
+    if show:
+        fig.show()
+
+makePlot(dep = 'et', plot_focus='ET', y_axis_lab='ET (mm)', ET_plot=True, 
+         plot_file_name='et_depth', text_x = 2005.5, text_y=550, save=True)
+makePlot('eto', 'ETo', 'ETo (mm)', True, 'eto', 2005.5, 1080, save= True)
+makePlot('et_of', 'EToF', 'EToF ', True, 'etof', 2005.5, 0.556, save= True)
+makePlot('crop_area', 'Crop Area', 'Area (km²)', False, 'crop_area', save= True)
+
+makePlot('crop_area', 'Crop Area (top ten crops annually)', 'Area (km²)', 
+         False, 'top_ten_crop_area', dataframe=df_final_top_ten, y_lim=(0, 900), save= True)
+makePlot('crop_area', 'Crop Area (zoomed, top ten crops annually)', 'Area (km²)', 
+         False, 'top_ten_crop_area_zoomed', dataframe=df_final_top_ten, y_lim=(0, 100), save= True)
+makePlot('crop_et', 'Crop ET (top ten crops annually)', 'ET (mm)', 
+         False, 'top_ten_crop_et', dataframe=df_final_top_ten, save= True)
+
+#%%
 #plot of ETo
 fig, ax = plt.subplots()
 sns.lineplot(data=df_final, x = 'year', y = 'eto', hue='filter')
 ax.set_title('Treasure Valley ETo')
-ax.set_xlim(2005, 2025)
+ax.set_xlim(first_year, final_year)
 ax.set_ylabel('ETo (mm)')
 ax.set_xlabel('Year')
 handles, labels = ax.get_legend_handles_labels()
@@ -245,7 +314,7 @@ fig.show()
 fig, ax = plt.subplots()
 sns.lineplot(data=df_final, x = 'year', y = 'et_of', hue='filter')
 ax.set_title('Treasure Valley EToF')
-ax.set_xlim(2005, 2025)
+ax.set_xlim(first_year, final_year)
 ax.set_ylabel('EToF')
 ax.set_xlabel('Year')
 handles, labels = ax.get_legend_handles_labels()
@@ -258,7 +327,7 @@ fig.show()
 #plot of area for each crop 
 fig, ax = plt.subplots()
 sns.lineplot(data = df_final, x = 'year', y = 'crop_area', palette= palette, hue = 'crop', style = 'crop', dashes = dash_palette)
-ax.set_xlim(2005, 2024)
+ax.set_xlim(first_year, final_year)
 ax.set_title('Area per crop')
 ax.set_ylabel('Area (km²)')
 ax.set_xlabel('Year')
@@ -271,7 +340,7 @@ fig.show()
 #plot of ET for each crop 
 fig, ax = plt.subplots()
 sns.lineplot(data = df_final, x = 'year', y = 'crop_et', palette= palette, hue = 'crop', style = 'crop', dashes = dash_palette)
-ax.set_xlim(2005, 2025)
+ax.set_xlim(first_year, final_year)
 ax.set_title('ET depth per crop')
 ax.set_ylabel('Depth (mm)')
 ax.set_xlabel('Year')
@@ -287,7 +356,7 @@ df_final_top_ten = df_final.loc[df_final.crop.isin(top_ten_set)]
 #plot of area for each crop 
 fig, ax = plt.subplots()
 sns.lineplot(data = df_final_top_ten, x = 'year', y = 'crop_area', palette= palette, hue = 'crop', style = 'crop', dashes = dash_palette)
-ax.set_xlim(2005, 2024)
+ax.set_xlim(first_year, final_year)
 ax.set_ylim(0, 900)
 ax.set_title('Area per crop (top ten crops by area annually)')
 ax.set_ylabel('Area (km²)')
@@ -299,20 +368,20 @@ fig.show()
 
 fig, ax = plt.subplots()
 sns.lineplot(data = df_final_top_ten, x = 'year', y = 'crop_area', palette= palette, hue = 'crop', style = 'crop', dashes = dash_palette)
-ax.set_xlim(2005, 2024)
+ax.set_xlim(first_year, final_year)
 ax.set_ylim(0, 100)
 ax.set_title('Area per crop (zoomed, top ten crops by area annually)')
 ax.set_ylabel('Area (km²)')
 ax.set_xlabel('Year')
 sns.move_legend(ax, 'upper center', bbox_to_anchor = (0.5,-0.1), ncols = 3)
 plt.gca().xaxis.set_major_formatter(FuncFormatter(lambda x,_: int(x)))
-fig.savefig('top_ten_crop_area.png', bbox_inches = 'tight')
+fig.savefig('top_ten_crop_area_zoomed.png', bbox_inches = 'tight')
 fig.show()
 
 #plot of ET for each crop 
 fig, ax = plt.subplots()
 sns.lineplot(data = df_final_top_ten, x = 'year', y = 'crop_et', palette= palette, hue = 'crop', style = 'crop', dashes = dash_palette)
-ax.set_xlim(2005, 2025)
+ax.set_xlim(first_year, final_year)
 ax.set_title('ET depth per crop (top ten crops by area annually)')
 ax.set_ylabel('Depth (mm)')
 ax.set_xlabel('Year')
@@ -338,7 +407,6 @@ for n in filters_dict:
     item_names.remove(item_names_end)
     item_names.insert(len(item_names) + 1, f'and {item_names_end}')
     item_string = f'{filters_dict[n][1]}filtering out {', '.join(item_names)}.\n'
-    print(item_string)
     filters_dict[n].append(item_string)
 
 doc = Document()
@@ -351,7 +419,7 @@ doc.add_heading(f'Created by Mason Bull on {date}', 2)
 
 doc.add_heading('Background', 1)
 doc.add_paragraph(f'Data were created in GEE and ripped down for plotting. We used ET measurments from OpenET Ensemble Version {et_version}.' \
-                  'We gathered landcover information from the NASS CDL data. Due to data availability we can map ET trends as far back as 2005.')
+                  f'We gathered landcover information from the NASS CDL data. Due to data availability we can map ET trends as far back as {first_year}.')
 
 doc.add_heading('Methods', 1)
 p = doc.add_paragraph(f"ET data were first summed per pixel for each month between April and October for each year of the analysis." \
@@ -364,18 +432,23 @@ p.add_run(f"We then calculated ET and area of each crop type in the study area p
 
 doc.add_heading('Figures', 1)
 doc.add_picture('et_depth.png')
-doc.add_paragraph("Figure 1. ET rate (mm) across the Treasure Valley from 2005 to 2024. Blue represents the heavily filtered 'All' class. Green represents the moderately filtered 'Desert' class. Orange represents the lightly filtered 'Water' class.")
+doc.add_paragraph(f"Figure 1. ET rate (mm) across the Treasure Valley from {first_year} to {final_year}. Blue represents the heavily filtered 'All' class. Green represents the moderately filtered 'Desert' class. Orange represents the lightly filtered 'Water' class. Dashed blue line represents the linear regression of et of crops in the Treasure Valley.")
 
 doc.add_picture('eto.png')
-doc.add_paragraph("Figure 2. ETo depth (mm) across the Treasure Valley from 2005 to 2024. Blue represents the heavily filtered 'All' class. Green represents the moderately filtered 'Desert' class. Orange represents the lightly filtered 'Water' class.")
+doc.add_paragraph(f"Figure 2. ETo depth (mm) across the Treasure Valley from {first_year} to {final_year}. Blue represents the heavily filtered 'All' class. Green represents the moderately filtered 'Desert' class. Orange represents the lightly filtered 'Water' class.")
 
 doc.add_picture('etof.png')
-doc.add_paragraph("Figure 3. EToF (unitless) across the Treasure Valley from 2005 to 2024. Blue represents the heavily filtered 'All' class. Green represents the moderately filtered 'Desert' class. Orange represents the lightly filtered 'Water' class.")
+doc.add_paragraph(f"Figure 3. EToF (unitless) across the Treasure Valley from {first_year} to {final_year}. Blue represents the heavily filtered 'All' class. Green represents the moderately filtered 'Desert' class. Orange represents the lightly filtered 'Water' class.")
 
 doc.add_picture('top_ten_crop_area.png')
-doc.add_paragraph("Figure 4. Landcover area of the ten largest landcover classes in km² across the Treasure Valley from 2005 to 2024. Shrubland, water, and grass/pasture are excluded. Colors are the CDL landcover class color codes.")
+doc.add_paragraph(f"Figure 4. Landcover area of the ten largest landcover classes in km² across the Treasure Valley from {first_year} to {final_year}. Shrubland, water, and grass/pasture are excluded. Colors are the CDL landcover class color codes.")
+
+doc.add_picture('top_ten_crop_area_zoomed.png')
+doc.add_paragraph(f"Figure 5. Landcover area of the ten largest landcover classes in km² across the Treasure Valley from {first_year} to {final_year}. Zoomed in to show detail of crops with <= 100 km² Shrubland, water, and grass/pasture are excluded. Colors are the CDL landcover class color codes.")
 
 doc.add_picture('top_ten_crop_et.png')
-doc.add_paragraph("Figure 5. ET depth (mm) of the ten largest landcover classes in km² across the Treasure Valley from 2005 to 2024. Shrubland, water, and grass/pasture are excluded. Colors are the CDL landcover class color codes.")
+doc.add_paragraph(f"Figure 6. ET depth (mm) of the ten largest landcover classes in km² across the Treasure Valley from {first_year} to {final_year}. Shrubland, water, and grass/pasture are excluded. Colors are the CDL landcover class color codes.")
+
+doc.add_heading('Discussion', 1)
 
 doc.save('report.docx')
