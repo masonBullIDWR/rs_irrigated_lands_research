@@ -1,3 +1,7 @@
+'''
+Script that will take the metadata and thumbnail for the image you are editing and upload all of the necessary info
+from X:/Spatial up to Portal.
+'''
 #%%
 from arcgis.gis import GIS
 from pathlib import Path

@@ -1,3 +1,27 @@
+'''
+This script will automatically take a raster file from a specified source destination and move it around on the 
+X:/Spatial and X:/x_y_staging folders while updating the metadata of said image.
+
+There are two necessary files and two other scripts that need to be accessible to the script in the source folder.
+
+Files:
+
+    1. meta_dictionaries.json holds the metadata that gets updated (to help clean up this script)
+    2. config_file.yml is a configuration file that holds source data informing the script of what files to look for.
+Scripts:
+
+    1. thumbnail_generation.py automatcially creates a thumbnail image for the raster file from an aprx to use in this script
+    2. item_publishing.py is the second step in this script to get the new metadata and stuff up to Portal from X:/Spatial, it has to run secondary due to user permissions on X:/Spatial
+
+Accessory files, should be present in source folder:
+
+    Avenir Font files (used in thumbnail generation):
+    |---Avenir Next LT Pro Bold.otf
+    |---Avenir Next LT Pro Demi.otf
+
+    IDWR logo png
+
+'''
 #%%
 from pathlib import Path
 from shutil import copy
@@ -11,6 +35,22 @@ from ruamel.yaml import YAML
 import json
 import thumbnail_generation 
 
+for i in [Path('config_file.yml'),
+          Path('thumbnail_generation.py'),
+          Path('metadata_dictionaries.json'),
+          Path('item_publishing.py')]:
+    try:
+        i.exists() == True
+    except:
+        raise(f'SOURCE ERROR: Missing necessary accessory file: {i}. Check repository for missing file and ensure it is included in source folder.')
+
+for i in [Path('Avenir Next LT Pro Bold.otf'),
+          Path('Avenir Next LT Pro Demi.otf'),
+          Path('IDWRLogo.png')]:
+    try:
+        i.exists() == True
+    except:
+        print(f'WARNING: Missing accessory file: {i}. Check repository for missing file. Code will run, but is more stable with accessory files included in source folder.\n\n')
 
 #-----------------------static variables -------------------------
 #template metadata file for classified imagery
@@ -53,7 +93,7 @@ full_name = location_dict[region][2] #ie., Treasure Valley
 n_loc = f'N:\\IrrigatedLands\\{region}\\RandomForest_{year}\\forRelease'
 x_spatial_loc = f'X:\\Spatial\\LandCover_Vegetation\\{x_drive_name}\\MachineLearning'
 x_staging_loc = f'X:\\Staging_X_Y\\LandCover_Vegetation\\{x_drive_name}\\MachineLearning'
-metadata_loc = f'N:\\IrrigatedLands\\rf_metadata_template.docx'
+metadata_loc = f'N:\\IrrigatedLands\\Misc\\rf_metadata\\rf_metadata_template.docx'
 
 #metadata document in a docx format for easy editing when things need changed
 metadata_doc = Document(metadata_loc)
@@ -66,9 +106,18 @@ temp_folder = str(Path.cwd()/'temp')
 thumbnail_generation.generateThumbnail(year, full_name, temp_folder, n_loc)
 
 #----------------file setup------------------------
-def setupDirectories(to_location = x_staging_loc, from_location = Path(n_loc)):
+def setupDirectories(to_location = x_staging_loc, from_location = Path(n_loc)) -> None:
     '''Get the directories on public folders set up, rename items, and copy data 
-    to where it needs to go.'''
+    to where it needs to go.
+
+    Args:
+        to_location: (string) of file path to the x_y_staging location for the specific file
+
+        from_location: (string) of the source location for the file getting its metadata updated
+    
+    Returns:
+        None
+    '''
     if not Path(to_location).exists():
         Path(to_location).mkdir(parents=True, exist_ok=True)
 
@@ -89,8 +138,15 @@ def setupDirectories(to_location = x_staging_loc, from_location = Path(n_loc)):
 setupDirectories()
 
 #----------------metadata elements------------------
-def getReportingDatasets(root = root_path):
-    '''Get all of the datasets used in classification as strings.'''
+def getReportingDatasets(root = root_path) -> tuple:
+    '''Get all of the datasets used in classification as strings.
+    
+    Args:
+        root: (string) of folder path the root folder where the training data lives
+    
+    Returns:
+        tuple: list of datasets used, dataset references, post processing datasets
+    '''
 
     reporting_folder = []
     folders = [f.name for f in root.glob('**/*') if f.is_dir()] 
@@ -150,8 +206,27 @@ formatted_datasets, formatted_references, formatted_post_process = getReportingD
  
 def updateMetadataDoc(metadata = metadata_doc, full = full_name, abb = abb_name, year = year,
                       datasets = formatted_datasets, references=formatted_references,
-                      post_process= formatted_post_process):
-    '''Get the metadata doc, replace keywords with new text, and create a dictionary of sections to pull later'''
+                      post_process= formatted_post_process) -> dict:
+    '''Get the metadata doc, replace keywords with new text, and create a dictionary of sections to pull later
+    
+    Args:
+        metadata: (docx doc) of metadata template
+
+        full: (string) of full name of image being processed
+
+        abb: (string) of abbreviated name of image
+
+        year: (string) of year of analysis
+
+        datasets: (list) of datasets used in classification
+
+        references: (list) of references for datasets
+
+        post_process: (list) of datasets used in post processing
+
+    Returns:
+        Dictionary of metadata doc sections
+    '''
     #a dictionary of how to update the document text to make sure it is matching the correct values
     dict = {'Region full': full,
             'Region abv.': abb,
@@ -296,8 +371,10 @@ publishing_json = {"file_title": file_title,
 with open(Path(temp_folder)/'publishing_json.json', 'w') as f:
     json.dump(publishing_json, f)
 
-#after you run this script, there are some items that GIS admin need to take care of, then when data is all set up on X:/Spatial 
-# you run item_publishing.py
+'''after you run this script, there are some items that GIS admin need to take care of, then when data is all set up on X:/Spatial 
+you run item_publishing.py'''
+print('\nInitial metadata updating finished. Wait for GIS Admin to move data into the correct spots on X:/Spatial, then run item_publishing.py to move data onto Portal.')
+
 #%%
 #helpers for checking your work without having to open arc catalog
 use_helpers = False
