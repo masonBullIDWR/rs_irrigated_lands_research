@@ -42,7 +42,7 @@ for i in [Path('config_file.yml'),
     try:
         i.exists() == True
     except:
-        raise(f'SOURCE ERROR: Missing necessary accessory file: {i}. Check repository for missing file and ensure it is included in source folder.')
+        raise Exception(f'SOURCE ERROR: Missing necessary accessory file: {i}. Check repository for missing file and ensure it is included in source folder.')
 
 for i in [Path('Avenir Next LT Pro Bold.otf'),
           Path('Avenir Next LT Pro Demi.otf'),
@@ -185,15 +185,21 @@ def getReportingDatasets(root = root_path) -> tuple:
         dataset = datasets_dict[band]
         ref_num = used_datasets.index(band) + 2 #there are two references that are always present, hence the +2
 
-        if band in ['USDA/NASS/CDL', 'USDA/NAIP/DOQQ']:
-            name = f'{dataset[0]}({ref_num})'
-            post_process_datasets.append(name)
-        else:
-            name = f'{dataset[0]}({ref_num})'
-            description_datasets.append(name)
-
         reference = f'({ref_num}) {dataset[1]}'
         reference_datasets.append(reference)
+
+    #if the year is a naip year then always put naip in the post processing section
+    #if the year is later than 2005, put cdl in the post processing section
+    #   if neither of those are true then make the post processing section identical to descriptions
+    naip_years = ['2004', '2006', '2009', '2011', '2013', '2015', '2017', '2019', '2021', '2023', '2025']
+    if year in naip_years:
+        name = f'{datasets_dict['USDA/NAIP/DOQQ']}({ref_num + 1})'
+        post_process_datasets.append(name)
+    if int(year) >= 2005:
+        name = f'{datasets_dict['USDA/NASS/CDL']}({ref_num + 2})'
+        post_process_datasets.append(name)
+    if year not in naip_years and int(year < 2005):
+        post_process_datasets = description_datasets
 
     datasets = ', '.join(description_datasets)
     references = '\n\n'.join(reference_datasets)
