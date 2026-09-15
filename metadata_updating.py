@@ -303,6 +303,8 @@ sections = updateMetadataDoc()
 TAC = sections['Use limitations']
 tags = f'Supervised Land Classification, Machine Learning, Random Forest, Water Budget, Monitoring, Hydrology, Groundwater, Surface Water, Irrigated Areas, Irrigation, Irrigated, Non-Irrigated, Regulatory, Farming, Idaho, ID, Idaho, Water, Water Use, {full_name}, {abb_name}, IDWR GIS Department, Environment'
 place_keywords = f'{full_name}, {abb_name}, Idaho, ID'
+if abb_name == 'WSPA': # just a helper for the tags as we transition names
+    place_keywords = f'{full_name}, {abb_name}, Treasure Valley, TV, Idaho, ID'
 file_title = f'{year} Irrigated Lands for the {full_name} ({abb_name}): Machine Learning Generated'
 complete_file_name = f'{abb_name}_{year}_RandomForest'
 description = sections['Description']
@@ -379,11 +381,8 @@ other_metadata ={'.//Esri/CreaDate': creation_short,
                  './/dqInfo/dataLineage/prcStep/stepRat': None,
                  './/dqInfo/dataLineage/statement': summary,
                  './/dataIdInfo/idCitation/otherCitDet': None,
-                 './/dqInfo/report[@type="DQConcConsis"]/measDesc': long_metadata['DQC_measDesc'], 
-                 './/dqInfo/report[@type="DQConcConsis"]/evalMethDesc': long_metadata['DQC_evalMethDesc'], 
                  './/dqInfo/report[@type="DQCompOm"]/measDesc': None,
                  './/dqInfo/report[@type="DQCompOm"]/evalMethDesc': None,
-                 './/dqInfo/report[@type="DQQuanAttAcc"]/measDesc': long_metadata['DQQ_measDesc'],
                  './/dataIdInfo/idCitation/datasetSeries/issId': year,
                  './/dataIdInfo/dataExt/exDesc': str(long_metadata['exDesc']).format(full_name = full_name),
                  './/dataIdInfo/dataExt/tempEle/TempExtent/exTemp/TM_Period/tmBegin': f'{year}-03-01T00:00:00',
@@ -427,7 +426,7 @@ print('\nInitial metadata updating finished. Wait for GIS Admin to move data int
 
 #%%
 #helpers for checking your work without having to open arc catalog
-use_helpers = True
+use_helpers = False
 if use_helpers:
     for elem in root.iter():
         if 'lineage' in elem.tag.lower() or 'Lineage' in elem.tag:

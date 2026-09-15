@@ -29,9 +29,6 @@
     "MERIT/Hydro/v1_0_1": ["MERIT Global Hydrography flow direction", "https://developers.google.com/earth-engine/datasets/catalog/MERIT_Hydro_v1_0_1#description"]
             },
 "long_metadata":{
-    "DQC_measDesc": "Each image in the Irrigated Lands dataset is post-processed by trained GTS staff before publication. GTS staff implement the NAIP, CDL, and METRIC ET datasets in post processing when the datasets are available. These datasets aid GTS staff by providing information on irrigated area that is unable to be effectively introduced to the classification model, or can be easier referenced as a standalone image. When a group of pixels that total an area greater than 160 acres (approximately a quarter-section) is determined to be misclassified via the additional datasets, a manual mask is applied to the classification raster. Areas less than 160 acres are generally inconsequential to overall model predictions and thus are left as the initial model prediction value.",
-    "DQC_evalMethDesc": "Irrigation masks are only applied when there is sufficient evidence of irrigation from either evapotranspiration, spectral, or high-resolution imagery. If there is insufficient evidence of irrigation, then the model prediction is the default value assigned to a pixel and a mask is not applied. Masks cover less than ten percent of the study area. Ground truthing of irrigation maps is not completed by GTS staff.",
-    "DQQ_measDesc": "Data are not ground truthed by GTS staff. No guarantees or warranties are provided for physical ground accuracy with these data.",
-    "exDesc": "Extent encompasses the {full_name} area for the purposes of classifying irrigated area. Extent shapefiles can be found at https://data-idwr.hub.arcgis.com/datasets/366d8c9764d346878038a10e346784b0_0/explore"
+   "exDesc": "Extent encompasses the {full_name} area for the purposes of classifying irrigated area. Extent shapefiles can be found at https://data-idwr.hub.arcgis.com/datasets/366d8c9764d346878038a10e346784b0_0/explore"
 }
         }
