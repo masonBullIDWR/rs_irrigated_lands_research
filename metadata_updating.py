@@ -22,6 +22,12 @@ Accessory files, should be present in source folder:
     IDWR logo png
 
 '''
+#TODO: check if formatting in metadata file can be set; a=see if we can get rid of geoprocessing history; see if we can dynamically update editions with republishing; automate temporal extent section with reporting json
+# TODO: get rid of "constraints" in Resource constraints; data quality measure reference should be about our validation methods methods (static), quality evaluation procedure shoudl be about our masking stuff?
+# TODO: put attribute accuracy guarantee in with the previous section, see if we can delete the rest of that section.
+    #see if we can get rid of the geoprocessing history section, or at least make it reference the right dataset
+    #fields has out of date information
+    #set item location hisory to None
 #%%
 from pathlib import Path
 from shutil import copy
@@ -54,10 +60,10 @@ for i in [Path('Avenir Next LT Pro Bold.otf'),
 
 #-----------------------static variables -------------------------
 #template metadata file for classified imagery
-template_xml = r"X:\Spatial\LandCover_Vegetation\SnakePlain\MachineLearning\ESPA_2024_RandomForest.tif.xml"
+template_xml = r"N:\IrrigatedLands\Misc\rf_metadata\rf_metadata_template.tif.xml"
 
 #get the configuration info
-parent_dir = Path.cwd().parent.absolute()
+parent_dir = Path.cwd().absolute()
 config_file = [i for i in parent_dir.glob('*.yml')][0]
 yaml = YAML()
 yaml.preserve_quotes = (True)
@@ -72,7 +78,7 @@ with open(json_path) as js:
     long_metadata = file['long_metadata']
 
 year = str(config['year'])
-
+scale = config['scale']
 #region is a key lookup value for the location_dict (the N: location)
 area = config['area']
 
@@ -130,7 +136,7 @@ def setupDirectories(to_location = x_staging_loc, from_location = Path(n_loc)) -
     #rename all files to the LOCATION_YYYY_RandomForest convention when copying to the x staging folder
     for f in from_location.glob('*.*'):
         extension = '.'.join(f.name.split('.')[1:])
-        if '.doc' not in extension:
+        if '.doc' not in extension and '.lock' not in extension:
             new_name = f'{abb_name}_{year}_RandomForest.{extension}'
             new_file = f'{to_location}/{new_name}'
             copy(f, new_file)
@@ -158,9 +164,14 @@ def getReportingDatasets(root = root_path) -> tuple:
     #the new method is to get reporting info in a json, but the old format is just a word doc
     #this accounts for both methods automatically
     jsons = [i for i in Path(root / target_folder).glob('*.json')]
-    if jsons[0] != None:
+    if len(jsons) > 0:
         classification_stats = json.dumps(open(jsons[0]))
         used_datasets = classification_stats['datasets']
+        sr_count = classification_stats['sr_img_count']
+        sr_start = classification_stats['first_sr_img_date'] 
+        sr_end = classification_stats['last_sr_img_date']
+        start_date = classification_stats['time_start']
+        end_date = classification_stats['time_end']
     else:
         reporting_doc = Document(root / target_folder / f'{area}-{year}-v{target_folder.split("V")[-1]}-classification_Irrigated_lands_reporting.docx')
 
@@ -175,15 +186,24 @@ def getReportingDatasets(root = root_path) -> tuple:
         #the list of datasets we used in classification NOTE: this currently does not include datasets used to post process
         used_datasets = doc_metadata_table.cell(column_index, 1).text.strip("[]").replace("'", "").split(', ')
 
+        sr_count = 'a minimum of 5'
+        sr_start = f'03-01-{year}' 
+        sr_end =   f'11-01-{year}'
+        start_date =  f'03-01-{year}' 
+        end_date =  f'11-01-{year}'
+
     #empty lists to be filled later 
     description_datasets = []
     reference_datasets = []
     post_process_datasets = []
+    count_and_date = {'count': sr_count, 'sr_start': sr_start, 'sr_end': sr_end, 'start_date': start_date, 'end_date': end_date}
 
     #make individual lists for the datasets we used and their references 
     for band in used_datasets:
         dataset = datasets_dict[band]
         ref_num = used_datasets.index(band) + 2 #there are two references that are always present, hence the +2
+        dataset_in_line = f'{dataset[0]} ({ref_num})'
+        description_datasets.append(dataset_in_line)
 
         reference = f'({ref_num}) {dataset[1]}'
         reference_datasets.append(reference)
@@ -193,21 +213,37 @@ def getReportingDatasets(root = root_path) -> tuple:
     #   if neither of those are true then make the post processing section identical to descriptions
     naip_years = ['2004', '2006', '2009', '2011', '2013', '2015', '2017', '2019', '2021', '2023', '2025']
     if year in naip_years:
-        name = f'{datasets_dict['USDA/NAIP/DOQQ']}({ref_num + 1})'
-        post_process_datasets.append(name)
+        dataset = datasets_dict['USDA/NAIP/DOQQ']
+        naip_ref_count = ref_num + 1
+        dataset_in_line = f'{dataset[0]} ({naip_ref_count})'
+        
+        post_process_datasets.append(dataset_in_line)
+
+        reference = f'({naip_ref_count}) {dataset[1]}'
+        reference_datasets.append(reference)
     if int(year) >= 2005:
-        name = f'{datasets_dict['USDA/NASS/CDL']}({ref_num + 2})'
-        post_process_datasets.append(name)
-    if year not in naip_years and int(year < 2005):
+        dataset = datasets_dict['USDA/NASS/CDL']
+        if year in naip_years:
+            cdl_ref_count = ref_num + 2
+        else:
+            cdl_ref_count = ref_num + 1
+        dataset_in_line = f'{dataset[0]} ({cdl_ref_count})'
+                
+        post_process_datasets.append(dataset_in_line)
+        
+        reference = f'({cdl_ref_count}) {dataset[1]}'
+        reference_datasets.append(reference)
+
+    if year not in naip_years and int(year) < 2005:
         post_process_datasets = description_datasets
 
     datasets = ', '.join(description_datasets)
     references = '\n\n'.join(reference_datasets)
     post_process = ', '.join(post_process_datasets)
 
-    return datasets, references, post_process
+    return datasets, references, post_process, count_and_date
 
-formatted_datasets, formatted_references, formatted_post_process = getReportingDatasets()
+formatted_datasets, formatted_references, formatted_post_process, count_and_date = getReportingDatasets()
 
  
 def updateMetadataDoc(metadata = metadata_doc, full = full_name, abb = abb_name, year = year,
@@ -239,7 +275,13 @@ def updateMetadataDoc(metadata = metadata_doc, full = full_name, abb = abb_name,
             'Year': year,
             'Datasets': datasets,
             'References': references,
-            'Post Process': post_process}
+            'Post Process': post_process,
+            'Scale': scale,
+            'No. SR Images': count_and_date['count'],
+            'SR Start Date': count_and_date['sr_start'],
+            'SR End Date': count_and_date['sr_end'],
+            'Start Date': count_and_date['start_date'],
+            'End Date': count_and_date['end_date']}
     docx_replace(doc=metadata, **dict)
 
     #the sections of the metadata document to parse, sections identified by text style in the word doc
@@ -354,7 +396,9 @@ other_metadata ={'.//Esri/CreaDate': creation_short,
 #this looks for every item in the above dictionary in the root xml string, changes it, then finally updates the target xml file
 for d in other_metadata:
     el = root.find(d)
-    el.text = other_metadata[d]
+    if el != None:
+        el.text = other_metadata[d]
+
 target_tif_meta.xml = ET.tostring(root, encoding='unicode')
 
 if not target_tif_meta.isReadOnly:
@@ -374,7 +418,7 @@ publishing_json = {"file_title": file_title,
                    "year": year, 
                    "abb_name": abb_name, 
                    "x_staging_loc": x_staging_loc}
-with open(Path(temp_folder)/'publishing_json.json', 'w') as f:
+with open(str(Path(temp_folder)/'publishing_json.json'), 'w') as f:
     json.dump(publishing_json, f)
 
 '''after you run this script, there are some items that GIS admin need to take care of, then when data is all set up on X:/Spatial 
@@ -383,10 +427,10 @@ print('\nInitial metadata updating finished. Wait for GIS Admin to move data int
 
 #%%
 #helpers for checking your work without having to open arc catalog
-use_helpers = False
+use_helpers = True
 if use_helpers:
     for elem in root.iter():
-        if 'date' in elem.tag.lower() or 'Date' in elem.tag:
+        if 'lineage' in elem.tag.lower() or 'Lineage' in elem.tag:
             # build the path from root down to this element
             path = []
             e = elem
@@ -404,7 +448,7 @@ if use_helpers:
         return '/'.join(reversed(path))
 
     for elem in root.iter():
-        if 'enttypl' in elem.tag.lower():
+        if 'detailed' in elem.tag.lower():
             print(get_path(elem), '=', elem.text)
 
 #%%
