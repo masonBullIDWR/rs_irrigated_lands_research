@@ -70,7 +70,7 @@ def generateThumbnail(year, full_name, temp_folder, n_loc) -> None:
         display_map = aprx.listMaps("DisplayMap")[0]
         display_map.spatialReference = SpatialReference(8826)
 
-        for i in n_loc.glob('*.tif.lyrx'):
+        for i in Path(n_loc).glob('*.tif.lyrx'):
             display_map.addLayer(mp.LayerFile(i))[0]
 
         layout = aprx.listLayouts('ThumbnailLayout')[0]

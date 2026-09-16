@@ -22,12 +22,7 @@ Accessory files, should be present in source folder:
     IDWR logo png
 
 '''
-#TODO: check if formatting in metadata file can be set; a=see if we can get rid of geoprocessing history; see if we can dynamically update editions with republishing; automate temporal extent section with reporting json
-# TODO: get rid of "constraints" in Resource constraints; data quality measure reference should be about our validation methods methods (static), quality evaluation procedure shoudl be about our masking stuff?
-# TODO: put attribute accuracy guarantee in with the previous section, see if we can delete the rest of that section.
-    #see if we can get rid of the geoprocessing history section, or at least make it reference the right dataset
-    #fields has out of date information
-    #set item location hisory to None
+
 #%%
 from pathlib import Path
 from shutil import copy
@@ -40,6 +35,7 @@ from python_docx_replace import docx_replace
 from ruamel.yaml import YAML
 import json
 import thumbnail_generation 
+import re
 
 for i in [Path('config_file.yml'),
           Path('thumbnail_generation.py'),
@@ -186,7 +182,7 @@ def getReportingDatasets(root = root_path) -> tuple:
         #the list of datasets we used in classification NOTE: this currently does not include datasets used to post process
         used_datasets = doc_metadata_table.cell(column_index, 1).text.strip("[]").replace("'", "").split(', ')
 
-        sr_count = 'a minimum of 5'
+        sr_count = 'a minimum of 5' #TODO: need more specifics here. This shouldn't be an issue going forward, but if we want to republish any old datasets then we won't have the number of images available
         sr_start = f'03-01-{year}' 
         sr_end =   f'11-01-{year}'
         start_date =  f'03-01-{year}' 
@@ -282,6 +278,16 @@ def updateMetadataDoc(metadata = metadata_doc, full = full_name, abb = abb_name,
             'SR End Date': count_and_date['sr_end'],
             'Start Date': count_and_date['start_date'],
             'End Date': count_and_date['end_date']}
+    
+    #bands is referenced in the extra info and is specific to surface reflectance, hence it's special treatment here
+    bands = []
+    for d in datasets.split(', '):
+        if 'Landsat' in d or 'Sentinel' in d or 'HLS' in d:
+            band_name = str(d).strip(re.findall(r' \(\d+\)', d)[0])
+            bands.append(band_name)
+
+    dict.update({'Bands': ', '.join(bands)})
+
     docx_replace(doc=metadata, **dict)
 
     #the sections of the metadata document to parse, sections identified by text style in the word doc
@@ -345,18 +351,7 @@ target_tif_meta.summary = summary
 xml_string = target_tif_meta.xml
 root = ET.fromstring(xml_string)
 
-#NOTE: we can probaly edit metadata in a few places, or omit, or some things need edits. Here is a list: (looking at ESPA 2024 for reference)
-#DONE NEEDS REVIEW'Extents: Description' should be about the extent,
-#TODO'Resource Contstraints' whole thing can be the same as access constraints or does it need to be different?,
-#DONE, SHOULD GET REVIEWED 'Data Quality: Data Qaulity Report - Conceptual consistency' should proabably be something related to how we do QAQC for both measure reference and procedure
-#DONE, SHOULD GET REVIEWED'Data Quality: Data Qaulity Report - Completeness Omission' I'm not sure what this is or hwo it is different than above so needs researched,
-#TODO Pretty much everything in 'Data Quality' Needs more intel before we know what to put in there,
-#TODO'Lineage: Lineage statment' Probably can be the general steps and tools we use to make the dataset maybe?,
-#TODO'Lineage: Process Step' I dont know if this is just the last step or a specific line out of steps or how it relates to rationale,
-#TODO'Geoprocessing History' I imagine this is the same as lineage, but it looks like it is just tracking the last tool used on the dataset in Arc,
-#TODO'Fields': I dont know if we can or should alter any of this, except for changing how it references the .vat file, as it is referencing the wrong dataset
-#TODO'Metadata Details': Is this similar to the lineage? I don't know why it is referencing such an old dataset, but also don't know if we can edit that
-#TODO'Metadata Constraints':these are again constraints and limitations that may need to be refined for this section, but they may also be fine to mirror the other constraints
+#NOTE: we can probaly edit metadata in a few places, or omit, or some things need edits. This is an ongoing effort, so leaving the note in here for now
 
 other_metadata ={'.//Esri/CreaDate': creation_short,
                  './/Esri/ModDate': publication_short, 
