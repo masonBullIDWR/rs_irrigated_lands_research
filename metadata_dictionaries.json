@@ -21,7 +21,7 @@
     "projects/openet/assets/ensemble/conus/gridmet/monthly/v2_1": ["OpenET Ensemble Evpotranspiration, Version 2.1", "https://developers.google.com/earth-engine/datasets/catalog/OpenET_ENSEMBLE_CONUS_GRIDMET_MONTHLY_v2_1"],
     "LANDSAT/LT05/C02/T1_L2": ["USGS Landsat 5 Collection 2, Tier 1 imagery", "https://developers.google.com/earth-engine/datasets/catalog/LANDSAT_LT05_C02_T1_L2"],
     "LANDSAT/LT07/C02/T1_L2": ["USGS Landsat 7 Collection 2, Tier 1 imagery", "https://developers.google.com/earth-engine/datasets/catalog/LANDSAT_LT07_C02_T1_L2"],
-    "users/gena/global-hand/hand-100": ["Height Above Nearest Drainage topography", "Donchyts, G., Winsemius, H., Schellekens, J., Erickson, T., Gao, H., Savenije, H., & van de Giesen, N. (2016). Global 30m height above the nearest drainage (HAND). Geophysical Research Abstracts, 18, EGU2016-17445-3. EGU General Assembly 2016."],
+    "users/gena/GlobalHAND/30m/hand-1000": ["Height Above Nearest Drainage topography", "Donchyts, G., Winsemius, H., Schellekens, J., Erickson, T., Gao, H., Savenije, H., & van de Giesen, N. (2016). Global 30m height above the nearest drainage (HAND). Geophysical Research Abstracts, 18, EGU2016-17445-3. EGU General Assembly 2016."],
     "USDA/NASS/CDL": ["USDA Cropland Data Layer", "https://developers.google.com/earth-engine/datasets/catalog/USDA_NASS_CDL"],
     "USDA/NAIP/DOQQ": ["USDA National Agriculture Imagery Program high resolution imagery", "https://developers.google.com/earth-engine/datasets/catalog/USDA_NAIP_DOQQ"],
     "projects/idwr-450722/assets/METRIC": ["IDWR generated METRIC evapotranspiration imagery", "https://data-idwr.hub.arcgis.com/pages/evapotranspiration"],
