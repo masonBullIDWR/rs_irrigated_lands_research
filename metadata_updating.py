@@ -24,6 +24,7 @@ Accessory files, should be present in source folder:
 '''
 
 #%%
+print('Importing packages...')
 from pathlib import Path
 from shutil import copy
 from arcpy import metadata
@@ -37,7 +38,7 @@ from ruamel.yaml import YAML
 import json
 import thumbnail_generation 
 import re
-
+print('Done\n')
 for i in [Path('config_file.yml'),
           Path('thumbnail_generation.py'),
           Path('metadata_dictionaries.json'),
@@ -105,9 +106,10 @@ if not Path(Path.cwd()/'temp').exists():
     Path(Path.cwd()/'temp').mkdir()
 temp_folder = str(Path.cwd()/'temp')
 
+print('Making portal thumbnail...')
 #make the thumbnail for the portal item 
 thumbnail_generation.generateThumbnail(year, full_name, temp_folder, n_loc)
-print(f'Portal thumbnail created. Stored in {temp_folder}\n')
+print(f'Done. Thumbnail stored in {temp_folder}\n')
 #----------------file setup------------------------
 def setupDirectories(to_location = x_staging_loc, from_location = Path(n_loc)) -> None:
     '''Get the directories on public folders set up, rename items, and copy data 
@@ -320,7 +322,7 @@ def updateMetadataDoc(metadata = metadata_doc, full = full_name, abb = abb_name,
     return sections
 
 sections = updateMetadataDoc()
-print('Classification report parsed. Updating metadata...\n')
+print('Classification report parsed. Updating metadata...')
 sleep(1.5)
 
 #the actual values the metadata will be updated with 
@@ -416,7 +418,7 @@ target_tif_meta.xml = ET.tostring(root, encoding='unicode')
 if not target_tif_meta.isReadOnly:
     target_tif_meta.save()
 
-print(f'New metadata saved to the tif at {str(target_tif)}\n')
+print(f'Done. New metadata saved to the tif at {str(target_tif)}\n')
 
 #take the important info and store it in a json for the publishing script to access
 publishing_json = {"file_title": file_title, 
