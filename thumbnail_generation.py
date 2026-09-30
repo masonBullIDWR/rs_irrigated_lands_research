@@ -28,24 +28,8 @@ title_size = [820,240]
 thumbnail_size = (1100, 720)
 background_size = (1280,720)
 
-def generateThumbnail(year, full_name, temp_folder, n_loc) -> None:
-    '''Creates a thumbnail at the location temp/thumbnail.png
-    
-    Args:
-        year: (string) of year of analysis
 
-        full_name: (string) full name of analysis area and year
-
-        temp_folder: (string) of path to temporary folder for storage
-
-        n_loc: (string) to N:/Drive location of source data
-        
-    Returns:
-        None
-    '''
-
-    title = f'{year} {full_name} Irrigated Lands Machine Learning'
-    def makeMap(template_aprx = template_aprx_path, dpi = 72) -> str:
+def makeMap(path, temp_folder, template_aprx = template_aprx_path, dpi = 72) -> str:
         '''Uses arcpy to create a scratch map copy of a template aprx to create a layout.
         Layout is then made into a png for putting into the thumbnail.
 
@@ -70,7 +54,7 @@ def generateThumbnail(year, full_name, temp_folder, n_loc) -> None:
         display_map = aprx.listMaps("DisplayMap")[0]
         display_map.spatialReference = SpatialReference(8826)
 
-        for i in Path(n_loc).glob('*.tif.lyrx'):
+        for i in Path(path).glob('*.tif.lyrx'):
             display_map.addLayer(mp.LayerFile(i))[0]
 
         layout = aprx.listLayouts('ThumbnailLayout')[0]
@@ -81,7 +65,7 @@ def generateThumbnail(year, full_name, temp_folder, n_loc) -> None:
         layout.exportToPNG(map_image_path, dpi)
         return map_image_path
 
-    def makeBanner(text = 'Zipped File', font = font_path, color = blue, 
+def makeBanner(text = 'Zipped File', font = font_path, color = blue, 
                    font_size = 120, banner_size = banner_size) -> Image:
         '''Makes a banner for the file type to display on Portal. Default is "Zipped File" 
         with a blue background.
@@ -108,7 +92,7 @@ def generateThumbnail(year, full_name, temp_folder, n_loc) -> None:
                          font = ImageFont.truetype(font = font, size = font_size), anchor = 'lt')
         return banner_image.rotate(90, expand=True)
 
-    def alignTitle(font_size, drawer, title, font) -> None:
+def alignTitle(font_size, drawer, title, font) -> None:
         '''Decide how to display the title of the thumbnail image, multiline 
         or single line depending on font size.
         
@@ -130,7 +114,7 @@ def generateThumbnail(year, full_name, temp_folder, n_loc) -> None:
         else:
             drawer.multiline_text([410,70], title, fill=gray, font=font, anchor="mm", align="center")
 
-    def getTitleFont(title_text, title_image, font_type = font_path, font_size = 1) -> tuple:
+def getTitleFont(title_text, title_image, font_type = font_path, font_size = 1) -> tuple:
         '''Sets the font size and type for the title. Takes into account the 
         amount of characters and spacing to pass to formatting function.
         
@@ -172,7 +156,7 @@ def generateThumbnail(year, full_name, temp_folder, n_loc) -> None:
 
         return title_font, font_size, title_text
 
-    def makeTitle(color = white) -> Image:
+def makeTitle(title, color = white) -> Image:
         '''Makes the title for the thumbnail using font size and type 
         created in formatting functions.
         
@@ -190,7 +174,7 @@ def generateThumbnail(year, full_name, temp_folder, n_loc) -> None:
         return title_image
 
 
-    def makeThumbnail(thumbnail_image, color = white, logo_path = logo_path) -> None:
+def makeThumbnail(n_path, title, thumbnail_image, temp_folder, color = white, logo_path = logo_path) -> None:
         '''Coalesce all of the parts of the thumbnail image into single png. 
         Saves png to temp folder.
         
@@ -205,8 +189,8 @@ def generateThumbnail(year, full_name, temp_folder, n_loc) -> None:
             None'''
 
         logo = Image.open(logo_path)
-        map_image = Image.open(makeMap())
-        title_image = makeTitle()
+        map_image = Image.open(makeMap(path = n_path, temp_folder=temp_folder))
+        title_image = makeTitle(title)
         banner = makeBanner()
         thumbnail_image.paste(banner, (941,0))
         thumbnail_image.paste(logo, (30,20))
@@ -218,5 +202,25 @@ def generateThumbnail(year, full_name, temp_folder, n_loc) -> None:
 
         background_image.save(Path(temp_folder) / 'thumbnail.png')
 
+
+def generateThumbnail(year, full_name, temp_folder, n_loc) -> None:
+    '''Creates a thumbnail at the location temp/thumbnail.png
+    
+    Args:
+        year: (string) of year of analysis
+
+        full_name: (string) full name of analysis area and year
+
+        temp_folder: (string) of path to temporary folder for storage
+
+        n_loc: (string) to N:/Drive location of source data
+        
+    Returns:
+        None
+    '''
+
+    title = f'{year} {full_name} Irrigated Lands Machine Learning'
+
+
     thumbnail_image = Image.new(mode="RGB", size=thumbnail_size, color=white)
-    makeThumbnail(thumbnail_image)
+    makeThumbnail(n_loc, title, thumbnail_image, temp_folder)
