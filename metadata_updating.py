@@ -27,8 +27,9 @@ Accessory files, should be present in source folder:
 from pathlib import Path
 from shutil import copy
 from arcpy import metadata
+from arcpy import mp
 from os.path import getmtime
-from time import strftime, strptime, ctime, time
+from time import strftime, strptime, ctime, time, sleep
 import xml.etree.ElementTree as ET
 from docx import Document
 from python_docx_replace import docx_replace
@@ -106,7 +107,7 @@ temp_folder = str(Path.cwd()/'temp')
 
 #make the thumbnail for the portal item 
 thumbnail_generation.generateThumbnail(year, full_name, temp_folder, n_loc)
-
+print(f'Portal thumbnail created. Stored in {temp_folder}\n')
 #----------------file setup------------------------
 def setupDirectories(to_location = x_staging_loc, from_location = Path(n_loc)) -> None:
     '''Get the directories on public folders set up, rename items, and copy data 
@@ -139,6 +140,7 @@ def setupDirectories(to_location = x_staging_loc, from_location = Path(n_loc)) -
 
 setupDirectories()
 
+print(f'Directories created and data copied to {x_staging_loc} \n')
 #----------------metadata elements------------------
 def getReportingDatasets(root = root_path) -> tuple:
     '''Get all of the datasets used in classification as strings.
@@ -152,16 +154,29 @@ def getReportingDatasets(root = root_path) -> tuple:
 
     reporting_folder = []
     folders = [f.name for f in root.glob('**/*') if f.is_dir()] 
+    
     for n in folders:
         if 'eporting' in n:
             reporting_folder.append(n)
+
+    #get the most recently modified reporting folder to pull the reporting json from 
+    if len(reporting_folder) > 1:
+        lookup = {}
+        for i in reporting_folder:
+            mod_date = getmtime([f for f in root.glob(f'**/{i}') if f.is_dir()][0])
+            lookup.update({mod_date: str(i)})
+        times = list(lookup.keys())
+        times.sort(reverse=True)
+        most_recent = times[0]
+        newest = lookup[most_recent]
+        reporting_folder = [newest]
 
     target_folder = reporting_folder[-1]
     #the new method is to get reporting info in a json, but the old format is just a word doc
     #this accounts for both methods automatically
     jsons = [i for i in Path(root / target_folder).glob('*.json')]
     if len(jsons) > 0:
-        classification_stats = json.dumps(open(jsons[0]))
+        classification_stats = json.load(open(jsons[0]))
         used_datasets = classification_stats['datasets']
         sr_count = classification_stats['sr_img_count']
         sr_start = classification_stats['first_sr_img_date'] 
@@ -182,7 +197,7 @@ def getReportingDatasets(root = root_path) -> tuple:
         #the list of datasets we used in classification NOTE: this currently does not include datasets used to post process
         used_datasets = doc_metadata_table.cell(column_index, 1).text.strip("[]").replace("'", "").split(', ')
 
-        sr_count = 'a minimum of 5' #TODO: need more specifics here. This shouldn't be an issue going forward, but if we want to republish any old datasets then we won't have the number of images available
+        sr_count = 'a minimum of 10' #TODO: need more specifics here. This shouldn't be an issue going forward, but if we want to republish any old datasets then we won't have the number of images available
         sr_start = f'03-01-{year}' 
         sr_end =   f'11-01-{year}'
         start_date =  f'03-01-{year}' 
@@ -281,8 +296,9 @@ def updateMetadataDoc(metadata = metadata_doc, full = full_name, abb = abb_name,
     
     #bands is referenced in the extra info and is specific to surface reflectance, hence it's special treatment here
     bands = []
-    for d in datasets.split(', '):
-        if 'Landsat' in d or 'Sentinel' in d or 'HLS' in d:
+    for d in datasets.split('), '):
+        d = d + ')'
+        if any(kw in d for kw in ['Landsat', 'Sentinel', 'HLS']):
             band_name = str(d).strip(re.findall(r' \(\d+\)', d)[0])
             bands.append(band_name)
 
@@ -304,6 +320,8 @@ def updateMetadataDoc(metadata = metadata_doc, full = full_name, abb = abb_name,
     return sections
 
 sections = updateMetadataDoc()
+print('Classification report parsed. Updating metadata...\n')
+sleep(1.5)
 
 #the actual values the metadata will be updated with 
 TAC = sections['Use limitations']
@@ -398,7 +416,7 @@ target_tif_meta.xml = ET.tostring(root, encoding='unicode')
 if not target_tif_meta.isReadOnly:
     target_tif_meta.save()
 
-print(f'New metadata saved to the tif at {str(target_tif)}')
+print(f'New metadata saved to the tif at {str(target_tif)}\n')
 
 #take the important info and store it in a json for the publishing script to access
 publishing_json = {"file_title": file_title, 
@@ -415,6 +433,20 @@ publishing_json = {"file_title": file_title,
 with open(str(Path(temp_folder)/'publishing_json.json'), 'w') as f:
     json.dump(publishing_json, f)
 
+
+#last step, make sure the data source and name for the layerfile is correct
+layerfile = mp.LayerFile(fr'{x_staging_loc}\{abb_name}_{year}_RandomForest.tif.lyrx')
+layer = layerfile.listLayers()[0]
+layer.name = fr'{abb_name}_{year}_RandomForest.tif'
+if layer.isBroken:
+    new_connection = layer.connectionProperties
+    new_connection['dataset'] = fr'{abb_name}_{year}_RandomForest.tif'
+    new_connection['connection_info']['database'] = x_staging_loc
+    layer.updateConnectionProperties(current_connection_info = layer.connectionProperties, 
+                                         new_connection_info = new_connection,
+                                         validate = False)
+layerfile.save()
+    
 '''after you run this script, there are some items that GIS admin need to take care of, then when data is all set up on X:/Spatial 
 you run item_publishing.py'''
 print('\nInitial metadata updating finished. Wait for GIS Admin to move data into the correct spots on X:/Spatial, then run item_publishing.py to move data onto Portal.')
