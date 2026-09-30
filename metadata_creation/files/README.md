@@ -5,7 +5,7 @@ The script runs in two parts.
 * First, run metadata_updating.py, if the config file is set up correctly and you have arcpy in your environment it should be no problem. After this is run, you need to wait for GIS Admin to zip up the created files and move them onto X:\Spatial
 * Second, after files are moved by Admin, run item_publishing.py. This moves the data onto Portal.
 
-Most of the required packages are standard for a remote sensing workflow. You need to have arcpy and python_docx_replace in the environment
+Most of the required packages are standard for a remote sensing workflow. You need to have **arcpy** and **python_docx_replace** in the environment
 # Required Items
 ## _**Scripts**_:
 ### metadata_updating.py
@@ -29,3 +29,14 @@ Most of the required packages are standard for a remote sensing workflow. You ne
 ### IDWRLogo.png
 * IDWR's color logo image file for the thumbnail. Can be found on the N:\ Drive if they are not in the files folder.
 
+## _Tip_:
+You can replace items in the config file via cmd using something like: 
+>Git bash
+>> sed -i 's/year: [0-9]*/year: 2025/g' "path\to\config"
+>>
+>
+or 
+>PowerShell
+>>(Get-Content $f -Raw) -replace '(?m)(training_data:\s*\r?\n\s*).*', '${1}path\to\training\data' | Set-Content $f -NoNewline
+>>
+>

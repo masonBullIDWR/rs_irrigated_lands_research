@@ -8,15 +8,8 @@ from arcpy import mp, SpatialReference
 from PIL import Image, ImageDraw, ImageFont
 
 template_aprx_path = r"N:\IrrigatedLands\portal_thumbnail_template_aprx\portal_thumbnail_template_aprx.aprx"
-logo_path = 'IDWRLogo.png'
-font_path = 'Avenir Next LT Pro Demi.otf'
-
-if not Path(logo_path).exists():
-    print('IDWR logo not found in source folder, using N: location instead.')
-    logo_path = r"N:\IrrigatedLands\Misc\rf_metadata\IDWRLogo.png"
-if not Path(font_path).exists():
-    print('Avenir font files not found in source folder, using N: location instead.')
-    font_path = r"N:\IrrigatedLands\Misc\rf_metadata\Avenir Next LT Pro Demi.otf"
+logo_path = r'files\IDWRLogo.png'
+font_path = r'files\Avenir Next LT Pro Demi.otf'
 
 white = (255,255,255)
 gray = (142,142,142)
@@ -179,7 +172,13 @@ def makeThumbnail(n_path, title, thumbnail_image, temp_folder, color = white, lo
         Saves png to temp folder.
         
         Args:
+            n_path: (string) to the N: Drive location that holds the data to make the map
+
+            title: (string) of the title to display on the thumbnail
+
             thumbnail_image: (Image) of the empty thumbnail 
+
+            temp_folder: (string) of a path to the temporary holding folder for thumbnail data
 
             color: (string) of color code for thumbnail background
 

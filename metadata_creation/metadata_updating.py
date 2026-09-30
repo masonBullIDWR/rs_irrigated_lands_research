@@ -43,17 +43,14 @@ for i in [Path('files/config_file.yml'),
           Path('thumbnail_generation.py'),
           Path('files/metadata_dictionaries.json'),
           Path('item_publishing.py')]:
-    try:
-        i.exists() == True
-    except:
+    
+    if i.exists() == False:
         raise Exception(f'SOURCE ERROR: Missing necessary accessory file: {i}. Check repository for missing file and ensure it is included in source folder.')
 
 for i in [Path('files/Avenir Next LT Pro Bold.otf'),
           Path('files/Avenir Next LT Pro Demi.otf'),
           Path('files/IDWRLogo.png')]:
-    try:
-        i.exists() == True
-    except:
+    if i.exists() == False:
         print(f'WARNING: Missing accessory file: {i}. Check repository for missing file. Code will run, but is more stable with accessory files included in source folder.\n\n')
 
 #-----------------------static variables -------------------------
