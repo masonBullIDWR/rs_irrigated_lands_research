@@ -39,18 +39,18 @@ import json
 import thumbnail_generation 
 import re
 print('Done\n')
-for i in [Path('config_file.yml'),
+for i in [Path('files/config_file.yml'),
           Path('thumbnail_generation.py'),
-          Path('metadata_dictionaries.json'),
+          Path('files/metadata_dictionaries.json'),
           Path('item_publishing.py')]:
     try:
         i.exists() == True
     except:
         raise Exception(f'SOURCE ERROR: Missing necessary accessory file: {i}. Check repository for missing file and ensure it is included in source folder.')
 
-for i in [Path('Avenir Next LT Pro Bold.otf'),
-          Path('Avenir Next LT Pro Demi.otf'),
-          Path('IDWRLogo.png')]:
+for i in [Path('files/Avenir Next LT Pro Bold.otf'),
+          Path('files/Avenir Next LT Pro Demi.otf'),
+          Path('files/IDWRLogo.png')]:
     try:
         i.exists() == True
     except:
@@ -62,7 +62,7 @@ template_xml = r"N:\IrrigatedLands\Misc\rf_metadata\rf_metadata_template.tif.xml
 
 #get the configuration info
 parent_dir = Path.cwd().absolute()
-config_file = [i for i in parent_dir.glob('*.yml')][0]
+config_file = [i for i in parent_dir.glob('**/*.yml')][0]
 yaml = YAML()
 yaml.preserve_quotes = (True)
 with open(config_file) as f:
