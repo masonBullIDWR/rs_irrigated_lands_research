@@ -44,7 +44,7 @@ properties = {'type': 'Document Link',
               'commentsEnabled': False,
               'accessInformation': 'Idaho Department of Water Resources (IDWR)',
               }
-met = [i for i in Path(x_staging_loc).glob('*.tif.xml')][0]
+met = Path(x_staging_loc) / f'{abb_name}_{year}_RandomForest.tif.xml'
 zip_item = gis.content.add(item_properties = properties, data = zip_file_path, thumbnail = str(thumbnail_link), metadata = str(met))
 
 #%%
