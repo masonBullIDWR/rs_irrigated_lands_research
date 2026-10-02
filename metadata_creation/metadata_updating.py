@@ -26,7 +26,7 @@ Accessory files, should be present in source folder:
 #%%
 print('Importing packages...')
 from pathlib import Path
-from shutil import copy
+from shutil import copy, copytree, copyfile, ignore_patterns
 from arcpy import metadata
 from arcpy import mp
 from os.path import getmtime
@@ -38,6 +38,9 @@ from ruamel.yaml import YAML
 import json
 import thumbnail_generation 
 import re
+from subprocess import Popen
+import sys
+
 print('Done\n')
 for i in [Path('files/config_file.yml'),
           Path('thumbnail_generation.py'),
@@ -52,7 +55,7 @@ for i in [Path('files/Avenir Next LT Pro Bold.otf'),
           Path('files/IDWRLogo.png')]:
     if i.exists() == False:
         print(f'WARNING: Missing accessory file: {i}. Check repository for missing file. Code will run, but is more stable with accessory files included in source folder.\n\n')
-
+checkbox = sys.argv[1]
 #-----------------------static variables -------------------------
 #template metadata file for classified imagery
 template_xml = r"N:\IrrigatedLands\Misc\rf_metadata\rf_metadata_template.tif.xml"
@@ -107,6 +110,7 @@ print('Making portal thumbnail...')
 #make the thumbnail for the portal item 
 thumbnail_generation.generateThumbnail(year, full_name, temp_folder, n_loc)
 print(f'Done. Thumbnail stored in {temp_folder}\n')
+print(f'Configuring directories...')
 #----------------file setup------------------------
 def setupDirectories(to_location = x_staging_loc, from_location = Path(n_loc)) -> None:
     '''Get the directories on public folders set up, rename items, and copy data 
@@ -139,7 +143,7 @@ def setupDirectories(to_location = x_staging_loc, from_location = Path(n_loc)) -
 
 setupDirectories()
 
-print(f'Directories created and data copied to {x_staging_loc} \n')
+print(f'Done. Directories created and data copied to {x_staging_loc} \n')
 #----------------metadata elements------------------
 def getReportingDatasets(root = root_path) -> tuple:
     '''Get all of the datasets used in classification as strings.
@@ -450,6 +454,29 @@ layerfile.save()
 you run item_publishing.py'''
 print('\nInitial metadata updating finished. Wait for GIS Admin to move data into the correct spots on X:/Spatial, then run item_publishing.py to move data onto Portal.')
 
+sleep(3)
+
+if checkbox == 'True':
+    arc_executable = [i for i in Path(r'C:/Program Files/ArcGIS').glob(r'**/*ArcGISPro.exe')][0]
+
+    temp_check_folder = Path(temp_folder) / 'check/'
+    if not temp_check_folder.exists():
+        Path.mkdir(temp_check_folder)
+
+    new_path = Path(temp_check_folder)/ 'check_aprx.aprx'
+
+    print('Setting up project for display...')
+    arc_scratch_project_path = Path(r"N:\IrrigatedLands\portal_thumbnail_template_aprx\portal_thumbnail_template_aprx.aprx")
+    project = mp.ArcGISProject(arc_scratch_project_path)
+
+    project.saveACopy(new_path)
+    new_project = mp.ArcGISProject(new_path)
+    map = new_project.listMaps("DisplayMap")[0]
+    map.addLayer(layerfile)
+    new_project.saveACopy(new_path)
+    print('Done\n')
+    Popen([arc_executable, new_path])
+    print('Opening ArcPro project to check metadata. Please Wait.')
 #%%
 #helpers for checking your work without having to open arc catalog
 use_helpers = False
