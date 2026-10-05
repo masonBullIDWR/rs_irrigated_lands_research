@@ -15,6 +15,7 @@ from matplotlib.ticker import FuncFormatter
 from scipy import stats
 import pymannkendall as mk
 from pathlib import Path
+import numpy as np
 
 ee.Authenticate()
 ee.Initialize(project= 'idwr-450722')
@@ -113,6 +114,7 @@ for i in formatting_lookup:
             item.update({'dash': dashes[uses[color]-1]})
     else:
         item.update({'dash': ()})
+
 #%%
 #get data for ET and ETo via Earth Engine and export to Drive,
 #this is a pretty large export, so the export is set behind an if statement until you want to use it 
@@ -189,6 +191,128 @@ if export:
                                   ).start()
     print(f'FeatureCollection for {lc_type} landcover exported to Drive.')
 
+#%%
+#use lc to calculate ET of changed pixels specifically, per Phil's comments on 9/16/26
+#this is similar to the original use of cdl to get et by crop type, but this is specific to urbanization of ag and desert 
+urban_classes = {}
+for i in formatting_lookup:
+    crop = formatting_lookup[i]['crop']
+    if 'develop' in str(crop).lower():
+        urban_classes.update({crop:int(i)})
+
+def get_urban_image(img, include_open_space = True) -> ee.Image:
+    if include_open_space:
+        open_space = img.eq(urban_classes['Developed, Open Space'])
+    else:
+        open_space = ee.Image.constant(0)
+    low = img.eq(urban_classes['Developed, Low Intensity'])
+    med = img.eq(urban_classes['Developed, Medium Intensity'])
+    high = img.eq(urban_classes['Developed, High Intensity'])
+
+    urban = open_space.add(low).add(med).add(high).unmask()
+
+    return urban
+
+def parse_lc(img, date_string, scrub = 52, grassland = 71, cultivated = 82, pasture = 81) -> tuple:
+    desert = img.eq(scrub).add(img.eq(grassland))
+    cultivated_crop = img.eq(cultivated).add(img.eq(pasture))
+    urban = get_urban_image(img)
+
+    et_img = et.filterDate(date_string[0], date_string[1]).mosaic()
+    eto_img = eto.filterDate(date_string[0], date_string[1]).mosaic()
+    eto_f = et_img.divide(eto_img).rename('eto_f')
+
+    cultivated_et = et_img.updateMask(cultivated_crop)
+    desert_et = et_img.updateMask(desert)
+    urban_et = et_img.updateMask(urban)
+
+    cultivated_eto_f = eto_f.updateMask(cultivated_crop)
+    desert_eto_f = eto_f.updateMask(desert)
+    urban_eto_f = eto_f.updateMask(urban)
+    
+    return desert, cultivated_crop, urban, et_img, cultivated_et, urban_et, desert_et, cultivated_eto_f, urban_eto_f, desert_eto_f, eto_f
+
+def reduce_change(lc_dictionary, start_lc, reducer):
+    return lc_dictionary[start_lc].selfMask().reduceRegion(reducer = reducer,
+                                      geometry=aoi_ee,
+                                      scale = 30,
+                                      crs = 'EPSG:8826')
+
+def get_et_difference(first_img, second_img, first_date, second_date) -> tuple:
+    first_desert, first_cultivated, first_urban, first_et, first_cultivated_et, first_urban_et, first_desert_et, first_cultivated_eto_f, first_urban_eto_f, first_desert_eto_f, first_eto_f = parse_lc(first_img, first_date)
+    second_desert, second_cultivated, second_urban, second_et, second_cultivated_et, second_urban_et, second_desert_et, second_cultivated_eto_f, second_urban_eto_f, second_desert_eto_f, second_eto_f = parse_lc(second_img, second_date)
+
+    ag_to_urban = first_cultivated.add(second_urban).eq(2)
+    urban_to_ag = first_urban.add(second_cultivated).eq(2)
+    desert_to_urban = first_desert.add(second_urban).eq(2)
+    urban_to_desert = first_urban.add(second_desert).eq(2)
+    changes = {'ag': ag_to_urban,
+               'desert': desert_to_urban}
+    
+    ag_loss_count = reduce_change(changes, 'ag', reducer=ee.Reducer.count())
+    desert_loss_count = reduce_change(changes, 'desert', reducer=ee.Reducer.count())
+
+    et_ag_to_urban_first = first_et.updateMask(ag_to_urban)
+    et_ag_to_urban_second = second_et.updateMask(ag_to_urban)
+    et_desert_to_urban_first = first_et.updateMask(desert_to_urban)
+    et_desert_to_urban_second = second_et.updateMask(desert_to_urban)
+
+    eto_f_ag_to_urban_first = first_eto_f.updateMask(ag_to_urban)
+    eto_f_ag_to_urban_second = second_eto_f.updateMask(ag_to_urban)
+    eto_f_desert_to_urban_first = first_eto_f.updateMask(desert_to_urban)
+    eto_f_desert_to_urban_second = second_eto_f.updateMask(desert_to_urban)
+
+    et_diff_desert_to_urban = et_desert_to_urban_second.subtract(et_desert_to_urban_first)
+    et_diff_ag_to_urban = et_ag_to_urban_second.subtract(et_ag_to_urban_first)
+    eto_f_diff_desert_to_urban = eto_f_desert_to_urban_second.subtract(eto_f_desert_to_urban_first)
+    eto_f_diff_ag_to_urban = eto_f_ag_to_urban_second.subtract(eto_f_ag_to_urban_first)
+    
+    return et_diff_ag_to_urban, et_diff_desert_to_urban, eto_f_diff_ag_to_urban, eto_f_diff_desert_to_urban, ag_loss_count, desert_loss_count
+
+def find_changed_pixels_stats(year):
+    earlier = ee.Number(year).format('%04d')
+    later = ee.Number(year).add(1).format('%04d')
+
+    first_filt_string = [earlier.cat('-01-01'), later.cat('-01-01')]
+    second_filt_string = [later.cat('-01-01'), ee.Number(year).add(2).format('%04d').cat('-01-01')]
+
+    first_img = lc_col.filterDate(first_filt_string[0], first_filt_string[1]).first()
+    second_img = lc_col.filterDate(second_filt_string[0], second_filt_string[1]).first()
+
+    et_diff_ag_to_urban, et_diff_desert_to_urban, eto_f_diff_ag_to_urban, eto_f_diff_desert_to_urban, ag_loss_count, desert_loss_count = get_et_difference(first_img, second_img, first_filt_string, second_filt_string)
+
+    img_stats_reducer = ee.Reducer.mean().combine(ee.Reducer.stdDev(), sharedInputs=True)
+
+    differences = {'ag': et_diff_ag_to_urban,
+                   'desert': et_diff_desert_to_urban,
+                   'ag_of': eto_f_diff_ag_to_urban,
+                   'desert_of': eto_f_diff_desert_to_urban}
+    ag_to_urban_stats = reduce_change(differences, 'ag', img_stats_reducer)
+    desert_to_urban_stats = reduce_change(differences, 'desert', img_stats_reducer)
+    ag_to_urban_stats_of = reduce_change(differences, 'ag_of', img_stats_reducer)
+    desert_to_urban_stats_of = reduce_change(differences, 'desert_of', img_stats_reducer)
+
+    return ee.Feature(None, {'First': year, 'Second': ee.Number(year).add(1), 
+                      'desert_to_urban_et_diff_mean':     desert_to_urban_stats.get('et_ensemble_mad_mean'),
+                      'desert_to_urban_et_diff_stdDev':   desert_to_urban_stats.get('et_ensemble_mad_stdDev'),
+                      'ag_to_urban_et_diff_mean':         ag_to_urban_stats.get('et_ensemble_mad_mean'),
+                      'ag_to_urban_et_diff_stdDev':       ag_to_urban_stats.get('et_ensemble_mad_stdDev'),
+                      'desert_to_urban_eto_f_diff_mean':  desert_to_urban_stats_of.get('eto_f_mean'),
+                      'desert_to_urban_eto_f_diff_stdDev':desert_to_urban_stats_of.get('eto_f_stdDev'),
+                      'ag_to_urban_eto_f_diff_mean':      ag_to_urban_stats_of.get('eto_f_mean'),
+                      'ag_to_urban_eto_f_diff_stdDev':    ag_to_urban_stats_of.get('eto_f_stdDev'),
+                      'ag_to_urban_count':                ag_loss_count,
+                      'desert_to_urban_count':            desert_loss_count})
+
+
+urbanization_stats = ee.FeatureCollection(years_ee.map(find_changed_pixels_stats))
+if export:
+    #there has to be an export here because the reductions are so large
+    ee.batch.Export.table.toDrive(collection=urbanization_stats,
+                                  description=f'wspa_et_urbanization_stats_{lc_type}_export',
+                                  fileNamePrefix=f'wspa_et_urbanization_stats_{lc_type}',
+                                  ).start()
+    print(f'FeatureCollection for {lc_type} urbanization metrics exported to Drive.')
 #%%
 #getting the csv into the format we want before plotting
 #this is the csv that is exported from EE
@@ -284,15 +408,18 @@ def makePlot(dep, plot_focus, y_axis_lab, ET_plot, plot_file_name, text_x = None
         sns.lineplot(data=dataframe, x = ind, y = dep, hue='filter')
         slope, intercept, r_value, p_value, std_err = linearRegression(ind, dep)
         trend, h, p_value, z, tau, s, var_s, slope, intercept = mannKendall(ind, dep)
+        trendline = np.arange(len(years_of_interest)) * slope + intercept
         #regplot give the trendline of the data, it only seems necessary to include it for one type of data
-        sns.regplot(data=dataframe[dataframe['filter'] == 'all_classes'], x = ind, y = dep, color='blue', scatter = False, line_kws={'linestyle': 'dashed'})
+        #sns.regplot(data=dataframe[dataframe['filter'] == 'all_classes'], x = ind, y = dep, color='blue', scatter = False, line_kws={'linestyle': 'dashed'})
+        ax.plot(years_of_interest, trendline, color = '#ff000060', linestyle = 'dashed')
         #sns.regplot(data=df_final[df_final['filter'] == 'desert'], x = 'year', y = 'et', color='green', scatter = False)
         #sns.regplot(data=df_final[df_final['filter'] == 'water'], x = 'year', y = 'et', color='orange', scatter = False)
-        ax.text(text_x, text_y, f'slope = {slope:.2f}, {getPReport(p_value)}') #scipy reports the r value, need to square it for reporting
+        ax.text(text_x, text_y, f'slope = {slope:.2f}, {getPReport(p_value)}') 
         ax.set_title(f'Western Snake Plain Aquifer {plot_focus} {lc_type.capitalize()}')
     else:
         sns.lineplot(data = dataframe, x = 'year', y = dep, palette= palette, hue = 'crop', style = 'crop', dashes = dash_palette)
         ax.set_title(f'WSPA {plot_focus} {lc_type}')
+    plt.grid(alpha = 0.3, linestyle = ':')
     ax.set_xlim(2000, final_year)
     ax.set_ylim(y_lim)
     ax.set_ylabel(y_axis_lab)
@@ -311,11 +438,11 @@ def makePlot(dep, plot_focus, y_axis_lab, ET_plot, plot_file_name, text_x = None
         fig.show()
 
 makePlot(dep = 'et', plot_focus=f'ET', y_axis_lab='ET (mm)', ET_plot=True, 
-         plot_file_name=f'et_depth_{lc_type}', text_x = 2005.5, text_y=550, save=False)
+         plot_file_name=f'et_depth_{lc_type}', text_x = 2005.5, text_y=625, save=False)
 
-makePlot('eto', f'ETo', 'ETo (mm)', True, f'eto_{lc_type}', 2005.5, 1080, save= False)
+makePlot('eto', f'ETo', 'ETo (mm)', True, f'eto_{lc_type}', 2003, 1080, save= False)
 
-makePlot('et_of', f'EToF', 'EToF ', True, f'etof_{lc_type}', 2005.5, 0.556, save= False)
+makePlot('et_of', f'EToF', 'EToF ', True, f'etof_{lc_type}', 2005.5, 0.62, save= False)
 
 makePlot('crop_area', f'Crop Area', 'Area (km²)', False, f'crop_area_{lc_type}', save= False)
 
@@ -326,7 +453,7 @@ makePlot('crop_area', f'Crop Area (zoomed, top ten crops annually)', 'Area (km²
          False, f'top_ten_crop_area_zoomed_{lc_type}', dataframe=df_final_top_ten, y_lim=(0, 100), save= False)
 
 makePlot('crop_et', f'Crop ET (top ten crops annually)', 'ET (mm)', 
-         False, f'top_ten_crop_et_{lc_type}', dataframe=df_final_top_ten, save= False)
+         False, f'top_ten_crop_et_{lc_type}', dataframe=df_final_top_ten, y_lim= (0,1200), save= False)
 
 #%%Create the document with figures and text
 from docx import Document
