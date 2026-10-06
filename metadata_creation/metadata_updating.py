@@ -55,7 +55,10 @@ for i in [Path('files/Avenir Next LT Pro Bold.otf'),
           Path('files/IDWRLogo.png')]:
     if i.exists() == False:
         print(f'WARNING: Missing accessory file: {i}. Check repository for missing file. Code will run, but is more stable with accessory files included in source folder.\n\n')
+
 checkbox = sys.argv[1]
+if '.json' in checkbox:
+    checkbox = False
 #-----------------------static variables -------------------------
 #template metadata file for classified imagery
 template_xml = r"N:\IrrigatedLands\Misc\rf_metadata\rf_metadata_template.tif.xml"
@@ -102,9 +105,9 @@ metadata_loc = f'N:\\IrrigatedLands\\Misc\\rf_metadata\\rf_metadata_template.doc
 #metadata document in a docx format for easy editing when things need changed
 metadata_doc = Document(metadata_loc)
 
-if not Path(Path.cwd()/'temp').exists():
-    Path(Path.cwd()/'temp').mkdir()
-temp_folder = str(Path.cwd()/'temp')
+if not Path(Path.cwd()/f'temp_{area}_{str(year)}').exists():
+    Path(Path.cwd()/f'temp_{area}_{str(year)}').mkdir()
+temp_folder = str(Path.cwd()/f'temp_{area}_{str(year)}')
 
 print('Making portal thumbnail...')
 #make the thumbnail for the portal item 
@@ -351,7 +354,9 @@ def makeShortDate(date):
 creation_short = makeShortDate(creation_date)
 publication_short = makeShortDate(publication_date)
 #----------------defining metadata----------------------
-target_tif =[i for i in Path(x_staging_loc).glob('*.tif')][0]
+for j in [i for i in Path(x_staging_loc).glob('*.tif')]:
+    if year in str(j) and abb_name in str(j):
+        target_tif = j        
 target_tif_meta = metadata.Metadata(target_tif)
 
 #updating of metadata pieces through the ESRI interface
@@ -473,7 +478,7 @@ if checkbox == 'True':
     new_project = mp.ArcGISProject(new_path)
     map = new_project.listMaps("DisplayMap")[0]
     map.addLayer(layerfile)
-    new_project.saveACopy(new_path)
+    new_project.save()
     print('Done\n')
     Popen([arc_executable, new_path])
     print('Opening ArcPro project to check metadata. Please Wait.')
