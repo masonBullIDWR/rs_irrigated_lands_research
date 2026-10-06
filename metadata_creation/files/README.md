@@ -6,37 +6,39 @@ The script runs in two parts.
 * Second, after files are moved by Admin, run item_publishing.py. This moves the data onto Portal.
 
 Most of the required packages are standard for a remote sensing workflow. You need to have **arcpy** and **python_docx_replace** in the environment
-# Required Items
+# Items
 ## _**Scripts**_:
 ### metadata_updating.py
-* The main script for updating metadata. You should just be able to hit run and it will do most everything for you.
+* The main script for updating metadata. You should just be able to hit run and it will do most everything for you. Required.
 
 ### thumbnail_generation.py
-* The script that creates the thumbnail image that is displayed on Portal and AGOL.  
+* The script that creates the thumbnail image that is displayed on Portal and AGOL. Required.
 ### item_publishing.py
-* Script that moves data from X:\Spatial up to Portal
+* Script that moves data from X:\Spatial up to Portal. Required.
+### gui.py
+* Creates a simple GUI that allows users to update the config from one window and run the script quickly. Optional.
 
 ## _**Files**_:
 ### config_file.yml
-* The configuration file for metadata_updating.py. Must be housed with the source folder in files folder. Be sure to set the items:
+* Required. The configuration file for metadata_updating.py. Must be housed with the source folder in files folder. Be sure to set the items:
   *  **area**: the abbreviated name of the region you are working in (eg., espa for the ESPA, tv or wspa for the WSPA)
   * **year**:  the year of the image you are updating. An integer.
   * **training_data**: the path to the training data used in classification. This is used to find the reporting document for your metadata.
 ### metadata_dictionaries.json
-* A json file that contains all of the metadata categories and their names that move into the metadata. Must be housed with the source folder in files folder.
+* Required. A json file that contains all of the metadata categories and their names that move into the metadata. Must be housed with the source folder in files folder.
 ### Avenir Next LT Pro Bold.otf | Avenir Next LT Pro Demi.otf
-* fonts that get put onto the AGOL thumbnail. These can be found on the N:\ Drive if they are not in the files folder.
+* Optional. fonts that get put onto the AGOL thumbnail. These can be found on the N:\ Drive if they are not in the files folder.
 ### IDWRLogo.png
-* IDWR's color logo image file for the thumbnail. Can be found on the N:\ Drive if they are not in the files folder.
+* Optional. IDWR's color logo image file for the thumbnail. Can be found on the N:\ Drive if they are not in the files folder.
 
 ## _Tip_:
 You can replace items in the config file via cmd using something like: 
 >Git bash
->> sed -i 's/year: [0-9]*/year: 2025/g' "path\to\config"
+>> ```sed -i 's/year: [0-9]*/year: 2025/g' "path\to\config"```
 >>
 >
 or 
 >PowerShell
->>(Get-Content $f -Raw) -replace '(?m)(training_data:\s*\r?\n\s*).*', '${1}path\to\training\data' | Set-Content $f -NoNewline
+>>```(Get-Content $f -Raw) -replace '(?m)(training_data:\s*\r?\n\s*).*', '${1}path\to\training\data' | Set-Content $f -NoNewline```
 >>
 >
