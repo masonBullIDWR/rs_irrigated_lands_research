@@ -7,13 +7,23 @@ from arcgis.gis import GIS
 from pathlib import Path
 from shutil import rmtree
 from json import load
+from ruamel.yaml import YAML
 
 #this script will create an item in portal given the inputs from metadata creation in metadata_updating.py 
 #portal is authorized via ArcGIS Pro on your machine, and will use whatever portal you have active as the destination portal
 #make sure that your active portal in Arc is Enterprise Portal (https://gis.idwr.idaho.gov/portal), not AGOL(https://arcgis.com)
 
+parent_dir = Path.cwd().absolute()
+config_file = [i for i in parent_dir.parent.glob('**/*.yml')][0]
+yaml = YAML()
+yaml.preserve_quotes = (True)
+with open(config_file) as f:
+    config = yaml.load(f)
+year = str(config['year'])
+area = config['area']
+
 #get the necessary info from the metadata creation step
-with open(str(Path.cwd()/'temp/publishing_json.json')) as j:
+with open(str(Path.cwd()/f'temp_{area}_{str(year)}/publishing_json.json')) as j:
     file = load(j)
     file_title = file['file_title'] 
     TAC = file['TAC'] 
