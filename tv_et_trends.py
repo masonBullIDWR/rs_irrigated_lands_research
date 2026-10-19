@@ -218,8 +218,8 @@ def parse_lc(img, date_string, scrub = 52, grassland = 71, cultivated = 82, past
     cultivated_crop = img.eq(cultivated).add(img.eq(pasture))
     urban = get_urban_image(img)
 
-    et_img = et.filterDate(date_string[0], date_string[1]).mosaic()
-    eto_img = eto.filterDate(date_string[0], date_string[1]).mosaic()
+    et_img = et.filterDate(date_string[0], date_string[1]).sum()
+    eto_img = eto.filterDate(date_string[0], date_string[1]).sum()
     eto_f = et_img.divide(eto_img).rename('eto_f')
 
     cultivated_et = et_img.updateMask(cultivated_crop)
@@ -249,8 +249,8 @@ def get_et_difference(first_img, second_img, first_date, second_date) -> tuple:
     changes = {'ag': ag_to_urban,
                'desert': desert_to_urban}
     
-    ag_loss_count = reduce_change(changes, 'ag', reducer=ee.Reducer.count())
-    desert_loss_count = reduce_change(changes, 'desert', reducer=ee.Reducer.count())
+    ag_loss_count = reduce_change(changes, 'ag', reducer=ee.Reducer.count()).get('b1')
+    desert_loss_count = reduce_change(changes, 'desert', reducer=ee.Reducer.count()).get('b1')
 
     et_ag_to_urban_first = first_et.updateMask(ag_to_urban)
     et_ag_to_urban_second = second_et.updateMask(ag_to_urban)
@@ -305,7 +305,7 @@ def find_changed_pixels_stats(year):
                       'desert_to_urban_count':            desert_loss_count})
 
 
-urbanization_stats = ee.FeatureCollection(years_ee.map(find_changed_pixels_stats))
+urbanization_stats = ee.FeatureCollection(years_ee.remove(2024).map(find_changed_pixels_stats)) #no et data for 2025 yet, so it stops at 24
 if export:
     #there has to be an export here because the reductions are so large
     ee.batch.Export.table.toDrive(collection=urbanization_stats,
@@ -313,6 +313,41 @@ if export:
                                   fileNamePrefix=f'wspa_et_urbanization_stats_{lc_type}',
                                   ).start()
     print(f'FeatureCollection for {lc_type} urbanization metrics exported to Drive.')
+
+#%%
+#setup and plotting the et changes with urbanization
+csv = pd.read_csv(fr"C:\Users\mason.bull\OneDrive - State of Idaho\Desktop\Geoprocessing\Data\TV\et_trends\wspa_et_urbanization_stats_{lc_type}.csv").drop(columns=['.geo', 'system:index'])
+
+csv['ag_to_urban_sqkm'] = csv['ag_to_urban_count'].map(lambda x: int(x.lstrip('{b1').lstrip('=').rstrip('}')))*9e-4
+csv['desert_to_urban_sqkm'] = csv['desert_to_urban_count'].map(lambda x: int(x.lstrip('{b1').lstrip('=').rstrip('}')))*9e-4
+
+for i in ['ag', 'desert']:
+    plot_title = f'{i}_to_urban_et_diff_mean'
+    fig, ax = plt.subplots()
+    sns.lineplot(data=csv, x = 'First', y = plot_title, color = 'green')
+    ax.errorbar(x = 'First', y = plot_title, data= csv, yerr= f'{i}_to_urban_et_diff_stdDev', fmt='o', color = 'green', alpha = 0.5)
+    plt.fill
+    ax.set_title(plot_title)
+    ax.set_ylabel('ET (mm)')
+    ax.set_xlabel('Year')
+
+for i in ['ag', 'desert']:
+    plot_title = f'{i}_to_urban_eto_f_diff_mean'
+    fig, ax = plt.subplots()
+    sns.lineplot(data=csv, x = 'First', y = plot_title, color = 'blue')
+    ax.errorbar(x = 'First', y = plot_title, data= csv, yerr= f'{i}_to_urban_eto_f_diff_stdDev', fmt='o', color = 'blue', alpha = 0.5)
+    plt.fill
+    ax.set_title(plot_title)
+    ax.set_ylabel('ETof (mm)')
+    ax.set_xlabel('Year')
+
+
+    fig1, ax1 = plt.subplots()
+    second_plot_title = f'{i}_to_urban_sqkm'
+    sns.lineplot(data = csv, x = 'First', y = second_plot_title)
+    ax1.set_title(second_plot_title)
+    ax1.set_ylabel('Area (sqkm)')
+    ax1.set_xlabel('Year')
 #%%
 #getting the csv into the format we want before plotting
 #this is the csv that is exported from EE
