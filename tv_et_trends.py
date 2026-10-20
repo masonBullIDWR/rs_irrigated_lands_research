@@ -1,6 +1,8 @@
 '''
 A script to calculate ET trends over time via OpenET Ensemble and NLCD data. This is an improvment upon the code entire_tv_et_trends.py
 This will do the calculations and create a basic report as a word doc (hopefully)
+
+Also added in the dr creek results (or the bones of them)
 '''
 #%%set up cell, no calculations
 import geopandas as gpd
@@ -16,6 +18,10 @@ from scipy import stats
 import pymannkendall as mk
 from pathlib import Path
 import numpy as np
+import rasterio as rio
+from rasterio.mask import mask
+from rasterio.features import shapes
+from shapely.geometry import shape
 
 ee.Authenticate()
 ee.Initialize(project= 'idwr-450722')
@@ -316,38 +322,28 @@ if export:
 
 #%%
 #setup and plotting the et changes with urbanization
-csv = pd.read_csv(fr"C:\Users\mason.bull\OneDrive - State of Idaho\Desktop\Geoprocessing\Data\TV\et_trends\wspa_et_urbanization_stats_{lc_type}.csv").drop(columns=['.geo', 'system:index'])
+csv = pd.read_csv(fr"D:\Geoprocessing\Data\TV\et_trends\wspa_et_urbanization_stats_{lc_type}.csv").drop(columns=['.geo', 'system:index'])
 
-csv['ag_to_urban_sqkm'] = csv['ag_to_urban_count'].map(lambda x: int(x.lstrip('{b1').lstrip('=').rstrip('}')))*9e-4
-csv['desert_to_urban_sqkm'] = csv['desert_to_urban_count'].map(lambda x: int(x.lstrip('{b1').lstrip('=').rstrip('}')))*9e-4
+csv['ag_to_urban_sqkm'] = csv['ag_to_urban_count']*9e-4
+csv['desert_to_urban_sqkm'] = csv['desert_to_urban_count']*9e-4
+csv = csv.drop(index=0)
 
-for i in ['ag', 'desert']:
-    plot_title = f'{i}_to_urban_et_diff_mean'
-    fig, ax = plt.subplots()
-    sns.lineplot(data=csv, x = 'First', y = plot_title, color = 'green')
-    ax.errorbar(x = 'First', y = plot_title, data= csv, yerr= f'{i}_to_urban_et_diff_stdDev', fmt='o', color = 'green', alpha = 0.5)
-    plt.fill
-    ax.set_title(plot_title)
-    ax.set_ylabel('ET (mm)')
-    ax.set_xlabel('Year')
-
-for i in ['ag', 'desert']:
-    plot_title = f'{i}_to_urban_eto_f_diff_mean'
-    fig, ax = plt.subplots()
-    sns.lineplot(data=csv, x = 'First', y = plot_title, color = 'blue')
-    ax.errorbar(x = 'First', y = plot_title, data= csv, yerr= f'{i}_to_urban_eto_f_diff_stdDev', fmt='o', color = 'blue', alpha = 0.5)
-    plt.fill
-    ax.set_title(plot_title)
-    ax.set_ylabel('ETof (mm)')
-    ax.set_xlabel('Year')
-
-
-    fig1, ax1 = plt.subplots()
-    second_plot_title = f'{i}_to_urban_sqkm'
-    sns.lineplot(data = csv, x = 'First', y = second_plot_title)
-    ax1.set_title(second_plot_title)
-    ax1.set_ylabel('Area (sqkm)')
-    ax1.set_xlabel('Year')
+def plot_transition(column, color, error_bar, title_end, y_units):
+    for i in ['ag', 'desert']:
+        measurement = f'{i}{column}'
+        fig, ax = plt.subplots()
+        sns.lineplot(data=csv, x = 'First', y = measurement, color = color)
+        if error_bar:
+            error_column = '_'.join(measurement.split('_')[:-1])
+            ax.errorbar(x = 'First', y = measurement, data= csv, yerr= f'{error_column}_stdDev', fmt='o', color = color, alpha = 0.5)
+        plot_title = f'{i.capitalize()} to Urban {title_end}'
+        ax.set_title(plot_title)
+        ax.set_ylabel(f'{title_end} ({y_units})')
+        ax.set_xlabel('Year')
+        fig.show
+plot_transition(column='_to_urban_et_diff_mean', color='green', error_bar=True, title_end='ET Difference', y_units='mm')
+plot_transition('_to_urban_eto_f_diff_mean', 'blue', True, 'EToF Difference', 'mm')
+plot_transition('_to_urban_sqkm', 'orange', False, 'Area', 'km²')
 #%%
 #getting the csv into the format we want before plotting
 #this is the csv that is exported from EE
@@ -489,6 +485,9 @@ makePlot('crop_area', f'Crop Area (zoomed, top ten crops annually)', 'Area (km²
 
 makePlot('crop_et', f'Crop ET (top ten crops annually)', 'ET (mm)', 
          False, f'top_ten_crop_et_{lc_type}', dataframe=df_final_top_ten, y_lim= (0,1200), save= False)
+
+#%% Dry creek section 
+from dry_creek_et_trends import pack
 
 #%%Create the document with figures and text
 from docx import Document
