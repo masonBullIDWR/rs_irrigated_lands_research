@@ -97,5 +97,3 @@ for f in final_masks:
 
 final_parquet = gpd.GeoDataFrame(pd.concat(parquet_files, ignore_index=True), crs = 'EPSG:8826')
 final_parquet.to_parquet('masks_parquet.parquet', index=False)
-
-final_parquet[final_parquet['Region'] == 'Portneuf']
