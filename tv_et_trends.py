@@ -27,11 +27,6 @@ ee.Authenticate()
 ee.Initialize(project= 'idwr-450722')
 ee.data.setWorkloadTag('wspa-et-trends')
 
-first_year = 2005
-final_year = 2024
-#cdl data don't start in the WSPA until 2005
-years_of_interest = list(range(first_year, final_year + 1))
-
 et_version = 2.0
 et_options = {2.0 : ['v2_0', '2.0'],
               2.1 : ['v2_1', '2.1']}
@@ -46,6 +41,7 @@ else:
 final_year = 2024
 #cdl data don't start in the WSPA until 2005
 years_of_interest = list(range(first_year, final_year + 1))
+years_ee = ee.List(years_of_interest)
 
 aoi_path = r"C:\Users\mason.bull\OneDrive - State of Idaho\Desktop\Geoprocessing\Data\TV\TV_and_MH_outline_union.shp"
 aoi = gpd.read_file(aoi_path).to_crs('EPSG:8826')
@@ -124,7 +120,6 @@ for i in formatting_lookup:
 #%%
 #get data for ET and ETo via Earth Engine and export to Drive,
 #this is a pretty large export, so the export is set behind an if statement until you want to use it 
-years_ee = ee.List(years_of_interest)
 
 #function to unpack some dictionaries later
 def unpackDict(di):
@@ -197,9 +192,13 @@ if export:
                                   ).start()
     print(f'FeatureCollection for {lc_type} landcover exported to Drive.')
 
+
+
 #%%
 #use lc to calculate ET of changed pixels specifically, per Phil's comments on 9/16/26
 #this is similar to the original use of cdl to get et by crop type, but this is specific to urbanization of ag and desert 
+
+#there is also an export at the end of this, so make sure your export setting is correct
 urban_classes = {}
 for i in formatting_lookup:
     crop = formatting_lookup[i]['crop']
@@ -224,6 +223,7 @@ def parse_lc(img, date_string, scrub = 52, grassland = 71, cultivated = 82, past
     cultivated_crop = img.eq(cultivated).add(img.eq(pasture))
     urban = get_urban_image(img)
 
+
     et_img = et.filterDate(date_string[0], date_string[1]).sum()
     eto_img = eto.filterDate(date_string[0], date_string[1]).sum()
     eto_f = et_img.divide(eto_img).rename('eto_f')
@@ -239,7 +239,7 @@ def parse_lc(img, date_string, scrub = 52, grassland = 71, cultivated = 82, past
     return desert, cultivated_crop, urban, et_img, cultivated_et, urban_et, desert_et, cultivated_eto_f, urban_eto_f, desert_eto_f, eto_f
 
 def reduce_change(lc_dictionary, start_lc, reducer):
-    return lc_dictionary[start_lc].selfMask().reduceRegion(reducer = reducer,
+    return lc_dictionary[start_lc].reduceRegion(reducer = reducer,
                                       geometry=aoi_ee,
                                       scale = 30,
                                       crs = 'EPSG:8826')
@@ -248,12 +248,15 @@ def get_et_difference(first_img, second_img, first_date, second_date) -> tuple:
     first_desert, first_cultivated, first_urban, first_et, first_cultivated_et, first_urban_et, first_desert_et, first_cultivated_eto_f, first_urban_eto_f, first_desert_eto_f, first_eto_f = parse_lc(first_img, first_date)
     second_desert, second_cultivated, second_urban, second_et, second_cultivated_et, second_urban_et, second_desert_et, second_cultivated_eto_f, second_urban_eto_f, second_desert_eto_f, second_eto_f = parse_lc(second_img, second_date)
 
+    #getting stable pixels and getting ET from them
+    stable = second_img.subtract(first_img).eq(0)
+
     ag_to_urban = first_cultivated.add(second_urban).eq(2)
     urban_to_ag = first_urban.add(second_cultivated).eq(2)
     desert_to_urban = first_desert.add(second_urban).eq(2)
     urban_to_desert = first_urban.add(second_desert).eq(2)
-    changes = {'ag': ag_to_urban,
-               'desert': desert_to_urban}
+    changes = {'ag': ag_to_urban.selfMask(),
+               'desert': desert_to_urban.selfMask()}
     
     ag_loss_count = reduce_change(changes, 'ag', reducer=ee.Reducer.count()).get('b1')
     desert_loss_count = reduce_change(changes, 'desert', reducer=ee.Reducer.count()).get('b1')
@@ -285,7 +288,7 @@ def find_changed_pixels_stats(year):
     first_img = lc_col.filterDate(first_filt_string[0], first_filt_string[1]).first()
     second_img = lc_col.filterDate(second_filt_string[0], second_filt_string[1]).first()
 
-    et_diff_ag_to_urban, et_diff_desert_to_urban, eto_f_diff_ag_to_urban, eto_f_diff_desert_to_urban, ag_loss_count, desert_loss_count = get_et_difference(first_img, second_img, first_filt_string, second_filt_string)
+    et_diff_ag_to_urban, et_diff_desert_to_urban, eto_f_diff_ag_to_urban, eto_f_diff_desert_to_urban, ag_loss_count, desert_loss_count = get_et_difference(first_img, second_img, first_date=first_filt_string, second_date = second_filt_string)
 
     img_stats_reducer = ee.Reducer.mean().combine(ee.Reducer.stdDev(), sharedInputs=True)
 
@@ -319,15 +322,68 @@ if export:
                                   fileNamePrefix=f'wspa_et_urbanization_stats_{lc_type}',
                                   ).start()
     print(f'FeatureCollection for {lc_type} urbanization metrics exported to Drive.')
-
 #%%
 #setup and plotting the et changes with urbanization
 csv = pd.read_csv(fr"D:\Geoprocessing\Data\TV\et_trends\wspa_et_urbanization_stats_{lc_type}.csv").drop(columns=['.geo', 'system:index'])
 
 csv['ag_to_urban_sqkm'] = csv['ag_to_urban_count']*9e-4
 csv['desert_to_urban_sqkm'] = csv['desert_to_urban_count']*9e-4
+csv['ag_to_urban_acre_feet'] = (csv['ag_to_urban_et_diff_mean']/304.8) * (csv['ag_to_urban_sqkm']*247.11)
+csv['desert_to_urban_acre_feet'] = (csv['desert_to_urban_et_diff_mean']/304.8) * (csv['desert_to_urban_sqkm']*247.11)
 csv = csv.drop(index=0)
 
+for i in ['ag', 'desert']:
+    csv[f'{i}_to_urban_cummulative_acre_feet'] = None
+    csv[f'{i}_to_urban_et_diff_mean_cummulative_feet'] = None
+    csv[f'{i}_to_urban_et_diff_mean_feet'] = csv[f'{i}_to_urban_et_diff_mean'] / 304.8
+    csv[f'{i}_to_urban_et_diff_stdDev_feet'] = csv[f'{i}_to_urban_et_diff_stdDev'] / 304.8
+    csv[f'{i}_to_urban_et_diff_stdDev_acre_feet'] = csv[f'{i}_to_urban_et_diff_stdDev_feet'] * (csv[f'{i}_to_urban_sqkm']*247.11)
+
+csv['first_formatted'] = csv['First'] + 0.5
+
+#getting a cumulative change over time
+def make_cummulative_column(new_col_name, non_cumm_col):
+    for i in list(csv['First']):
+        y1 = i
+        y2 = i + 1 
+        if y2 > list(csv['First'])[-1]:
+            break
+        if y1 == list(csv['First'])[0]:
+            csv.loc[csv['First'] == y1, new_col_name] = csv.loc[csv['First'] == y1, non_cumm_col]
+        first_year = float(csv.loc[csv['First'] == y1][new_col_name])
+        second_year = float(csv.loc[csv['First'] == y2][non_cumm_col])
+        total = first_year + second_year
+        csv.loc[csv['First'] == y2, new_col_name] = total
+for i in ['ag', 'desert']:
+    make_cummulative_column(f'{i}_to_urban_cummulative_acre_feet',         f'{i}_to_urban_acre_feet')
+    make_cummulative_column(f'{i}_to_urban_et_diff_mean_cummulative_feet', f'{i}_to_urban_et_diff_mean_feet')
+
+#%%
+#plot barplots of change with cummulative change overlain
+def plot_et_change(prev_lc, y_line, y_bar, measurement, volume_or_depth, y_lower_lim, y_upper_lim):
+    fig, ax = plt.subplots()
+    ax2 = ax.twinx()
+    sns.lineplot(data = csv, x = 'first_formatted', y = y_line, ax = ax2, color = 'red')
+    sns.barplot(data = csv, x = 'first_formatted', y = y_bar, ax = ax, native_scale=True)
+    ax.set_xticks(ticks = np.arange(2000, 2024, step = 1), labels= csv['First'], rotation = 45, ha = 'center', va = 'center_baseline')
+    ax2.set_ylim(y_lower_lim, y_upper_lim)
+    ax.set_ylabel(f'{prev_lc} to Urban Annual ET Change ({measurement})', color = 'blue')
+    ax2.set_ylabel(f'{prev_lc} to Urban Cummulatvie ET Change ({measurement})', color = 'red')
+    ax.set_xlim(list(csv['First'])[0], list(csv['First'])[-1]+1)
+    ax.set_title(f'{volume_or_depth} of ET Change')
+    ax.set_xlabel('Year')
+    plt.vlines(x = [range(2000, 2024, 1)],ymin=y_lower_lim, ymax = y_upper_lim, color = 'black', alpha = 0.1)
+    plt.grid(color = 'black', alpha = 0.15)
+    if 'acre_feet' not in y_bar:
+        ax.errorbar(x = csv['first_formatted'], y = csv[y_bar], yerr = csv[y_bar.replace('mean', 'stdDev')].abs(), color = 'black', fmt='none')
+    fig.show()
+
+plot_et_change('Ag', 'ag_to_urban_cummulative_acre_feet', 'ag_to_urban_acre_feet', 'Acre Feet', 'Volume', -20000, 2100)
+plot_et_change('Ag', 'ag_to_urban_et_diff_mean_cummulative_feet', 'ag_to_urban_et_diff_mean_feet', 'Feet', 'Depth', -10, 2.1)
+plot_et_change('Desert', 'desert_to_urban_cummulative_acre_feet', 'desert_to_urban_acre_feet', 'Acre Feet', 'Volume', -390, 500)
+plot_et_change('Desert', 'desert_to_urban_et_diff_mean_cummulative_feet', 'desert_to_urban_et_diff_mean_feet', 'Feet', 'Depth', -1, 1.41)
+#%%
+#plot lineplots of et changes and area changes
 def plot_transition(column, color, error_bar, title_end, y_units):
     for i in ['ag', 'desert']:
         measurement = f'{i}{column}'
@@ -344,6 +400,7 @@ def plot_transition(column, color, error_bar, title_end, y_units):
 plot_transition(column='_to_urban_et_diff_mean', color='green', error_bar=True, title_end='ET Difference', y_units='mm')
 plot_transition('_to_urban_eto_f_diff_mean', 'blue', True, 'EToF Difference', 'mm')
 plot_transition('_to_urban_sqkm', 'orange', False, 'Area', 'km²')
+plot_transition('_to_urban_acre_feet', 'red', False, 'ET Acre Feet Difference', 'acre feet')
 #%%
 #getting the csv into the format we want before plotting
 #this is the csv that is exported from EE
@@ -437,7 +494,7 @@ def makePlot(dep, plot_focus, y_axis_lab, ET_plot, plot_file_name, text_x = None
     fig, ax = plt.subplots()
     if ET_plot:
         sns.lineplot(data=dataframe, x = ind, y = dep, hue='filter')
-        slope, intercept, r_value, p_value, std_err = linearRegression(ind, dep)
+        #slope, intercept, r_value, p_value, std_err = linearRegression(ind, dep)
         trend, h, p_value, z, tau, s, var_s, slope, intercept = mannKendall(ind, dep)
         trendline = np.arange(len(years_of_interest)) * slope + intercept
         #regplot give the trendline of the data, it only seems necessary to include it for one type of data
@@ -463,8 +520,8 @@ def makePlot(dep, plot_focus, y_axis_lab, ET_plot, plot_file_name, text_x = None
     sns.move_legend(ax, 'upper center', bbox_to_anchor = (0.5,-0.1), ncols = 3)
     plt.gca().xaxis.set_major_formatter(FuncFormatter(lambda x,_: int(x)))
     if save:
-        fig.savefig(f'{lc_type}_{plot_file_name}.png', bbox_inches = 'tight')
-        print(f'Plot saved to {str(Path.cwd()/plot_file_name)}.png')
+        fig.savefig(f'outputs/plots/{lc_type}_{plot_file_name}.png', bbox_inches = 'tight')
+        print(f'Plot saved to {str(Path.cwd())}outputs/plots/{lc_type}_{plot_file_name}.png')
     if show:
         fig.show()
 
@@ -488,7 +545,7 @@ makePlot('crop_et', f'Crop ET (top ten crops annually)', 'ET (mm)',
 
 #%% Dry creek section 
 from dry_creek_et_trends import pack
-
+dry_creek_dict = pack()
 #%%Create the document with figures and text
 from docx import Document
 from docx.shared import Inches
